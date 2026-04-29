@@ -8,14 +8,12 @@
     istep0               = 0
     dt                   = 1800.0
     npt_unit             = 'm'
-    npt                  = 12
+    npt                  = 1
     ndtd                 = 1
     runtype              = 'continue'
-
     ice_ic               = 'none'
     restart_ext          = .false.
     use_restart_time     = .true.
-
     restart_format       = 'default'
     restart_rearranger   = 'default'
     restart_iotasks      = -99
@@ -163,7 +161,7 @@
 
 &dynamics_nml
     kdyn                 = 1
-    ndte                 = 240
+    ndte                 = 720
     revised_evp          = .false.
     evp_algorithm        = 'standard_2d'
     brlx                 = 300.0

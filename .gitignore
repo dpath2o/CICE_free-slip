@@ -5,6 +5,9 @@
 # these are stored in gh-pages orphan branch
 doc/build
 
+# fortran config
+ice_in
+
 # Ignore testsuite file/directories
 testsuite*
 caselist*

@@ -1,11 +1,11 @@
 #!/bin/csh -f
 #PBS -N free-slip05-cice-year
-#PBS -P ol01
+#PBS -P gv90
 #PBS -q normalbw
 #PBS -l walltime=10:00:00
 #PBS -l ncpus=1232
 #PBS -l mem=700GB
-#PBS -l storage=gdata/gv90+gdata/xp65+scratch/ol01
+#PBS -l storage=gdata/gv90+gdata/xp65
 #PBS -l wd
 #PBS -j oe
 #PBS -W umask=022

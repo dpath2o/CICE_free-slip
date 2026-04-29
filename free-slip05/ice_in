@@ -8,7 +8,7 @@
     istep0               = 0
     dt                   = 1800.0
     npt_unit             = 'm'
-    npt                  = 12
+    npt                  = 14
     ndtd                 = 1
     runtype              = 'continue'
     ice_ic               = 'none'

@@ -43,14 +43,17 @@
       use ice_constants, only: c0, p027, p055, p111, p166, &
           p222, p25, p333, p5, c1
       use ice_dyn_shared, only: stepu, stepuv_CD, stepu_C, stepv_C, &
-          dyn_prep1, dyn_prep2, dyn_finish, &
-          ndte, yield_curve, ecci, denom1, arlx1i, fcor_blk, fcorE_blk, fcorN_blk, &
-          uvel_init, vvel_init, uvelE_init, vvelE_init, uvelN_init, vvelN_init, &
-          seabed_stress_factor_LKD, seabed_stress_factor_prob, seabed_stress_method, &
-          seabed_stress, Ktens, revp, &
-          lateral_drag, boundary_condition, form_func, lateral_drag_stress_factor, &
-          Cs, Cq, u_cap, u_cap_eff, C_L, u0, &
-          static_switch, quad_switch, quad_cap_switch, linear_switch
+           dyn_prep1, dyn_prep2, dyn_finish, &
+           ndte, yield_curve, ecci, denom1, arlx1i, fcor_blk, fcorE_blk, fcorN_blk, &
+           uvel_init, vvel_init, uvelE_init, vvelE_init, uvelN_init, vvelN_init, &
+           seabed_stress_factor_LKD, seabed_stress_factor_prob, seabed_stress_method, &
+           seabed_stress, Ktens, revp, &
+           lateral_drag, boundary_condition, form_func, lateral_drag_stress_factor, &
+           Cs, Cq, u_cap, u_cap_eff, C_L, u0, &
+           u_blend, blend_exp, u_sat, eps_blend, &
+          static_switch, quad_switch, quad_cap_switch, linear_switch, &
+          blend_vel_switch, blend_strain_switch, quad_sat_switch, &
+          u_blend, eps_blend, blend_exp, u_sat
       use ice_fileunits, only: nu_diag
       use ice_exit, only: abort_ice
       use icepack_intfc, only: icepack_warnings_flush, icepack_warnings_aborted
@@ -980,48 +983,85 @@
       elseif (grid_ice == "C") then
 
          ! defaults each timestep
-         static_switch   = c0
-         quad_switch     = c0
-         quad_cap_switch = c0
-         linear_switch   = c0
+         static_switch        = c0
+         quad_switch          = c0
+         quad_cap_switch      = c0
+         linear_switch        = c0
+         blend_vel_switch     = c0
+         blend_strain_switch  = c0
+         quad_sat_switch      = c0
 
-         ! Set lateral-drag functional weights once per timestep (no ndte-branching)  
-         u_cap_eff = huge(1.0d0) ! lateral drag; form factor method 'quad_cap' default: cap disabled
+         ! default: cap disabled unless explicitly requested
+         u_cap_eff = huge(1.0d0)
          if (u_cap > 0.0d0) u_cap_eff = u_cap
 
-         if (lateral_drag) then
-            select case (trim(form_func))
-            case ('static')
-               static_switch   = c1
-            case ('quad')
-               quad_switch     = c1
-            case ('quad_cap')
-               quad_cap_switch = c1
-               if (u_cap <= 0.0d0) then
-                  call abort_ice(error_message='form_func=quad_cap requires u_cap>0', &
-                                 file=__FILE__, line=__LINE__)
-               end if
-            case ('sum')
-               static_switch   = c1
-               quad_switch     = c1
-               linear_switch   = merge(c1, c0, C_L > 0.0d0) 
-            case ('sum_quad_cap')
-               static_switch   = c1
-               quad_cap_switch = c1
-               linear_switch   = merge(c1, c0, C_L > 0.0d0)
-               if (u_cap <= 0.0d0) then
-                  call abort_ice(error_message='form_func=sum_quad_cap requires u_cap>0', &
-                                 file=__FILE__, line=__LINE__)
-               end if
-            case ('linear')
-               linear_switch   = c1
-               ! only auto-default C_L in the explicit linear mode (keeps your “opt-in” semantics)
-               if (C_L <= 0.0d0) C_L = Cs / max(u0, 1.0e-12_dbl_kind)
-            case default
-               call abort_ice(error_message='Unknown form_func='//trim(form_func), &
+         select case (trim(form_func))
+
+         case ('static')
+            static_switch = c1
+
+         case ('linear')
+            linear_switch = c1
+            if (C_L <= 0.0d0) C_L = Cs / max(u0, 1.0e-12_dbl_kind)
+
+         case ('quad')
+            quad_switch = c1
+
+         case ('quad_cap')
+            quad_cap_switch = c1
+            if (u_cap <= 0.0d0) then
+               call abort_ice(error_message='form_func=quad_cap requires u_cap>0', &
                               file=__FILE__, line=__LINE__)
-            end select
-         end if
+            endif
+
+         case ('sum')
+            static_switch = c1
+            quad_switch   = c1
+            linear_switch = merge(c1, c0, C_L > 0.0d0)
+
+         case ('sum_quad_cap')
+            static_switch   = c1
+            quad_cap_switch = c1
+            linear_switch   = merge(c1, c0, C_L > 0.0d0)
+            if (u_cap <= 0.0d0) then
+               call abort_ice(error_message='form_func=sum_quad_cap requires u_cap>0', &
+                              file=__FILE__, line=__LINE__)
+            endif
+
+         case ('blend_vel')
+            blend_vel_switch = c1
+            if (u_blend <= 0.0d0) then
+               call abort_ice(error_message='form_func=blend_vel requires u_blend>0', &
+                              file=__FILE__, line=__LINE__)
+            endif
+            if (blend_exp <= 0.0d0) then
+               call abort_ice(error_message='form_func=blend_vel requires blend_exp>0', &
+                              file=__FILE__, line=__LINE__)
+            endif
+
+         case ('blend_strain')
+            blend_strain_switch = c1
+            if (eps_blend <= 0.0d0) then
+               call abort_ice(error_message='form_func=blend_strain requires eps_blend>0', &
+                    file=__FILE__, line=__LINE__)
+            endif
+            if (blend_exp <= 0.0d0) then
+               call abort_ice(error_message='form_func=blend_strain requires blend_exp>0', &
+                    file=__FILE__, line=__LINE__)
+            endif
+
+         case ('quad_sat')
+            quad_sat_switch = c1
+            if (u_sat <= 0.0d0) then
+               call abort_ice(error_message='form_func=quad_sat requires u_sat>0', &
+                              file=__FILE__, line=__LINE__)
+            endif
+
+         case default
+            call abort_ice(error_message='Unknown form_func='//trim(form_func), &
+                           file=__FILE__, line=__LINE__)
+
+         end select
 
          do ksub = 1,ndte        ! subcycling
 
@@ -1066,9 +1106,12 @@
             !$OMP END PARALLEL DO
 
             ! calls ice_haloUpdate, controls bundles and masks
+            ! call dyn_haloUpdate (halo_info,          halo_info_mask,    &
+            !                      field_loc_NEcorner, field_type_scalar, &
+            !                      shearU)
             call dyn_haloUpdate (halo_info,          halo_info_mask,    &
-                                 field_loc_NEcorner, field_type_scalar, &
-                                 shearU)
+                 field_loc_NEcorner, field_type_scalar, &
+                 shearU, deltaU)
 
             !$OMP PARALLEL DO PRIVATE(iblk)
             do iblk = 1, nblocks
@@ -1143,33 +1186,61 @@
             !$OMP PARALLEL DO PRIVATE(iblk)
             do iblk = 1, nblocks
 
-                call stepu_C (nx_block            , ny_block            , & ! u, E point
-                              icellE        (iblk), Cdn_ocnE  (:,:,iblk), &
-                              indxEi      (:,iblk), indxEj      (:,iblk), &
-                                                    aiE       (:,:,iblk), &
-                              uocnE     (:,:,iblk), vocnE     (:,:,iblk), &
-                              waterxE   (:,:,iblk), forcexE   (:,:,iblk), &
-                              emassdti  (:,:,iblk), fmE       (:,:,iblk), &
-                              strintxE  (:,:,iblk), taubxE    (:,:,iblk), &
-                              uvelE_init(:,:,iblk),                       &
-                              uvelE     (:,:,iblk), vvelE     (:,:,iblk), &
-                              TbE       (:,:,iblk),                       &
-                              KuxE      (:,:,iblk), KuyE      (:,:,iblk), &
-                              KuE       (:,:,iblk))
+                ! call stepu_C (nx_block            , ny_block            , & ! u, E point
+                !               icellE        (iblk), Cdn_ocnE  (:,:,iblk), &
+                !               indxEi      (:,iblk), indxEj      (:,iblk), &
+                !                                     aiE       (:,:,iblk), &
+                !               uocnE     (:,:,iblk), vocnE     (:,:,iblk), &
+                !               waterxE   (:,:,iblk), forcexE   (:,:,iblk), &
+                !               emassdti  (:,:,iblk), fmE       (:,:,iblk), &
+                !               strintxE  (:,:,iblk), taubxE    (:,:,iblk), &
+                !               uvelE_init(:,:,iblk),                       &
+                !               uvelE     (:,:,iblk), vvelE     (:,:,iblk), &
+                !               TbE       (:,:,iblk),                       &
+                !               KuxE      (:,:,iblk), KuyE      (:,:,iblk), &
+                !               KuE       (:,:,iblk))
+               call stepu_C (nx_block            , ny_block            , &
+                             icellE        (iblk), Cdn_ocnE  (:,:,iblk), &
+                             indxEi      (:,iblk), indxEj      (:,iblk), &
+                             aiE       (:,:,iblk), &
+                             uocnE     (:,:,iblk), vocnE     (:,:,iblk), &
+                             waterxE   (:,:,iblk), forcexE   (:,:,iblk), &
+                             emassdti  (:,:,iblk), fmE       (:,:,iblk), &
+                             strintxE  (:,:,iblk), taubxE    (:,:,iblk), &
+                             uvelE_init(:,:,iblk),                       &
+                             uvelE     (:,:,iblk), vvelE     (:,:,iblk), &
+                             TbE       (:,:,iblk),                       &
+                             deltaU    (:,:,iblk), uarea     (:,:,iblk), &
+                             KuxE      (:,:,iblk), KuyE      (:,:,iblk), &
+                             KuE       (:,:,iblk))
 
-                call stepv_C (nx_block,             ny_block,             & ! v, N point
-                              icellN        (iblk), Cdn_ocnN  (:,:,iblk), &
-                              indxNi      (:,iblk), indxNj      (:,iblk), &
-                                                    aiN       (:,:,iblk), &
-                              uocnN     (:,:,iblk), vocnN     (:,:,iblk), &
-                              wateryN   (:,:,iblk), forceyN   (:,:,iblk), &
-                              nmassdti  (:,:,iblk), fmN       (:,:,iblk), &
-                              strintyN  (:,:,iblk), taubyN    (:,:,iblk), &
-                              vvelN_init(:,:,iblk),                       &
-                              uvelN     (:,:,iblk), vvelN     (:,:,iblk), &
-                              TbN       (:,:,iblk),                       &
-                              KuxN      (:,:,iblk), KuyN      (:,:,iblk), &
-                              KuN       (:,:,iblk))
+                ! call stepv_C (nx_block,             ny_block,             & ! v, N point
+                !               icellN        (iblk), Cdn_ocnN  (:,:,iblk), &
+                !               indxNi      (:,iblk), indxNj      (:,iblk), &
+                !                                     aiN       (:,:,iblk), &
+                !               uocnN     (:,:,iblk), vocnN     (:,:,iblk), &
+                !               wateryN   (:,:,iblk), forceyN   (:,:,iblk), &
+                !               nmassdti  (:,:,iblk), fmN       (:,:,iblk), &
+                !               strintyN  (:,:,iblk), taubyN    (:,:,iblk), &
+                !               vvelN_init(:,:,iblk),                       &
+                !               uvelN     (:,:,iblk), vvelN     (:,:,iblk), &
+                !               TbN       (:,:,iblk),                       &
+                !               KuxN      (:,:,iblk), KuyN      (:,:,iblk), &
+                !               KuN       (:,:,iblk))
+               call stepv_C (nx_block            , ny_block            , &
+                    icellN        (iblk), Cdn_ocnN  (:,:,iblk), &
+                    indxNi      (:,iblk), indxNj      (:,iblk), &
+                    aiN       (:,:,iblk), &
+                    uocnN     (:,:,iblk), vocnN     (:,:,iblk), &
+                    wateryN   (:,:,iblk), forceyN   (:,:,iblk), &
+                    nmassdti  (:,:,iblk), fmN       (:,:,iblk), &
+                    strintyN  (:,:,iblk), taubyN    (:,:,iblk), &
+                    vvelN_init(:,:,iblk),                       &
+                    uvelN     (:,:,iblk), vvelN     (:,:,iblk), &
+                    TbN       (:,:,iblk),                       &
+                    deltaU    (:,:,iblk), uarea     (:,:,iblk), &
+                    KuxN      (:,:,iblk), KuyN      (:,:,iblk), &
+                    KuN       (:,:,iblk))
             enddo
             !$OMP END PARALLEL DO
 

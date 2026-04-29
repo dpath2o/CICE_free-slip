@@ -61,7 +61,6 @@
          visc_method          , & ! method for viscosity calc at U points (C, CD grids)
          seabed_stress_method     ! method for seabed stress calculation
                                   ! LKD: Lemieux et al. 2015, probabilistic: Dupont et al. 2022
-         
 
       real (kind=dbl_kind), parameter, public :: &
          ! u0     = 5e-5_dbl_kind, & ! residual velocity for seabed stress (m/s)
@@ -150,21 +149,28 @@
       ! conditions for form functions are done in evp(dt) prior to ndte loop
       character (len=char_len), public :: &
          boundary_condition, &  ! 'no_slip' (Dirchlet) or 'free_slip' (Neumann)
-         form_func              ! 'static', 'quad', 'sum', 'linear'
+         form_func              ! 'static', 'quad', 'sum', 'linear', 'blend_vel', 'blend_strain', 'quad_sat'
       real(kind=dbl_kind), public :: &
-         Cs, &                  ! static function coefficient; Liu et al. (2022) eq.13; 5.0*10^{−4} (units m/s^2)
-         Cq, &                  ! quadratic coefficient (units m^-1)
-         C_L, &                 ! Linear (Rayleigh) coefficient for "linear" option: tau = mF * C_L * u; Units: 1/s
-         u_cap, &               ! quadratic capped method threshold for u/v; units m/s
-         u_cap_eff, &           ! effective cap (>=0), set in evp(dt)
-         u0                     ! residual velocity for lateral drag stress (and seabed stress) (units m/s)
+           Cs, &                  ! static function coefficient; Liu et al. (2022) eq.13; 5.0*10^{−4} (units m/s^2)
+           Cq, &                  ! quadratic coefficient (units m^-1)
+           C_L, &                 ! Linear (Rayleigh) coefficient for "linear" option: tau = mF * C_L * u; Units: 1/s
+           u_cap, &               ! quadratic capped method threshold for u/v; units m/s
+           u_cap_eff, &           ! effective cap (>=0), set in evp(dt)
+           u0, &                  ! residual velocity for lateral drag stress (and seabed stress) (units m/s)
+           u_blend, &             ! velocity transition scale for blend_vel, m/s
+           eps_blend, &           ! strain-rate transition scale for blend_strain, s^-1
+           blend_exp, &           ! sharpness of transition, dimensionless
+           u_sat                  ! saturation velocity scale for quad_sat, m/s
       ! lateral drag form function switches based 'form_func'
       ! if form_func == 'sum' then static_switch = 1, and quad_switch = 1
-      real (kind=dbl_kind), public :: & 
-         static_switch, &         ! 1 (default); 1 = enable static form function, 0 = disable 
-         quad_switch,   &         ! 0 (default); 1 = enable quadratic form function, 0 = disable
-         quad_cap_switch, &       ! 0 (default); 1 = enable capped-quadratic form function, 0 = disable
-         linear_switch            ! 0 (default); 1 = enable linear form function, 0 = disable
+      real (kind=dbl_kind), public :: &
+           static_switch, &         ! 1 (default); 1 = enable static form function, 0 = disable 
+           quad_switch,   &         ! 0 (default); 1 = enable quadratic form function, 0 = disable
+           quad_cap_switch, &       ! 0 (default); 1 = enable capped-quadratic form function, 0 = disable
+           linear_switch, &         ! 0 (default); 1 = enable linear form function, 0 = disable
+           blend_vel_switch, &
+           blend_strain_switch, &
+           quad_sat_switch
       ! diagnostic lateral drag stress terms
       real(kind=dbl_kind), dimension (:,:,:), allocatable, public :: &
          KuU , KuE , KuN, &
@@ -1116,68 +1122,76 @@
 ! Integration of the momentum equation to find velocity u at E location on C grid
 
       subroutine stepu_C (nx_block,   ny_block, &
-                          icell,      Cw,       &
-                          indxi,      indxj,    &
-                          aiX,                  &
-                          uocn,       vocn,     &
-                          waterx,     forcex,   &
-                          massdti,    fm,       &
-                          strintx,    taubx,    &
-                          uvel_init,            &
-                          uvel,       vvel,     &
-                          Tb,                   &
-                          Kux,        Kuy,      &
-                          Ku)
+           icell,      Cw,       &
+           indxi,      indxj,    &
+           aiX,                  &
+           uocn,       vocn,     &
+           waterx,     forcex,   &
+           massdti,    fm,       &
+           strintx,    taubx,    &
+           uvel_init,            &
+           uvel,       vvel,     &
+           Tb,                   &
+           deltaU,     uarea,   &
+           Kux,        Kuy,      &
+           Ku)
 
       integer (kind=int_kind), intent(in) :: &
-         nx_block, ny_block, & ! block dimensions
-         icell                 ! total count when ice[en]mask is true
+           nx_block, ny_block, & ! block dimensions
+           icell                 ! total count when ice[en]mask is true
 
       integer (kind=int_kind), dimension (nx_block*ny_block), intent(in) :: &
-         indxi   , & ! compressed index in i-direction
-         indxj       ! compressed index in j-direction
+           indxi   , & ! compressed index in i-direction
+           indxj       ! compressed index in j-direction
 
       real (kind=dbl_kind), dimension (nx_block,ny_block), intent(in) :: &
-         Tb,       & ! seabed stress factor (N/m^2)
-         uvel_init,& ! x-component of velocity (m/s), beginning of timestep
-         aiX     , & ! ice fraction on X-grid
-         waterx  , & ! for ocean stress calculation, x (m/s)
-         forcex  , & ! work array: combined atm stress and ocn tilt, x
-         massdti , & ! mass of e-cell/dt (kg/m^2 s)
-         uocn    , & ! ocean current, x-direction (m/s)
-         vocn    , & ! ocean current, y-direction (m/s)
-         fm      , & ! Coriolis param. * mass in e-cell (kg/s)
-         strintx , & ! divergence of internal ice stress, x (N/m^2)
-         Cw      , & ! ocean-ice neutral drag coefficient
-         vvel    , & ! y-component of velocity (m/s) interpolated to E location
-         Ku          ! lateral (lateral) stress factor (N/m^2)
+           Tb,       & ! seabed stress factor (N/m^2)
+           deltaU,   & ! U-point deformation invariant * area (m^2/s)
+           uarea,    & ! U-point cell area (m^2)
+           uvel_init,& ! x-component of velocity (m/s), beginning of timestep
+           aiX     , & ! ice fraction on X-grid
+           waterx  , & ! for ocean stress calculation, x (m/s)
+           forcex  , & ! work array: combined atm stress and ocn tilt, x
+           massdti , & ! mass of e-cell/dt (kg/m^2 s)
+           uocn    , & ! ocean current, x-direction (m/s)
+           vocn    , & ! ocean current, y-direction (m/s)
+           fm      , & ! Coriolis param. * mass in e-cell (kg/s)
+           strintx , & ! divergence of internal ice stress, x (N/m^2)
+           Cw      , & ! ocean-ice neutral drag coefficient
+           vvel    , & ! y-component of velocity (m/s) interpolated to E location
+           Ku          ! base lateral-drag factor (kg/m^2)
 
       real (kind=dbl_kind), dimension (nx_block,ny_block), intent(inout) :: &
-         uvel    , & ! x-component of velocity (m/s)
-         taubx   , & ! seabed stress, x-direction (N/m^2)
-         Kux, Kuy    ! lateral (lateral) stress, x/y-directions (N/m^2)
+           uvel    , & ! x-component of velocity (m/s)
+           taubx   , & ! seabed stress, x-direction (N/m^2)
+           Kux, Kuy    ! lateral (lateral) stress, x/y-directions (N/m^2)
 
       ! local variables
 
       integer (kind=int_kind) :: &
-         i, j, ij
+           i, j, ij
 
       real (kind=dbl_kind) :: &
-         uold, vold         , & ! old-time uvel, vvel
-         vrel               , & ! relative ice-ocean velocity
-         cca,ccb,ccc,cc1    , & ! intermediate variables
-         taux               , & ! part of ocean stress term
-         Cb                 , & ! complete seabed (basal) stress coeff
-         rhow               , & ! density of water
-         Cl
+           uold, vold         , & ! old-time uvel, vvel
+           vrel               , & ! relative ice-ocean velocity
+           cca,ccb,ccc,cc1    , & ! intermediate variables
+           taux               , & ! part of ocean stress term
+           Cb                 , & ! complete seabed (basal) stress coeff
+           rhow               , & ! density of water
+           Cl
 
       ! stepu_C locals (add near other locals)
       real(kind=dbl_kind) :: u_noCDP, du, umag_eff
       real(kind=dbl_kind) :: sum_du_coast, sum_absu_coast
       integer(kind=int_kind) :: n_coast
 
-      ! lateral drag
+      ! ! lateral drag
       real(kind=dbl_kind) :: umag, invccc, phi
+      real (kind=dbl_kind) :: &
+           ub, us, eb, w_vel, w_eps, &
+           phi_static, phi_quad, phi_quad_cap, &
+           phi_blend_vel, phi_blend_strain, phi_quad_sat, &
+           eps_eff
 
       character(len=*), parameter :: subname = '(stepu_C)'
 
@@ -1200,8 +1214,14 @@
          i = indxi(ij)
          j = indxj(ij)
 
+         ! ice speed
          uold = uvel(i,j)
          vold = vvel(i,j)
+         ccc  = sqrt(uold**2 + vold**2) + u0
+         umag = ccc - u0
+
+         ! inverse speed
+         invccc = c1 / ccc
 
          ! (magnitude of relative ocean current)*rhow*drag*aice
          vrel = aiX(i,j)*rhow*Cw(i,j)*sqrt((uocn(i,j) - uold)**2 + &
@@ -1209,25 +1229,46 @@
          ! ice/ocean stress
          taux = vrel*waterx(i,j) ! NOTE this is not the entire
 
-         ccc = sqrt(uold**2 + vold**2) + u0
-         ! Cb  = Tb(i,j) / ccc ! for seabed stress
-         ! Cl  = Ku(i,j) / ccc ! for lateral drag stress
-         umag   = ccc - u0                 ! saves an extra sqrt; umag >= 0
-         invccc = c1 / ccc
-         Cb     = Tb(i,j) * invccc ! seabed stress
+         ! seabed stress
+         Cb = Tb(i,j) * invccc
 
-         ! Composite lateral drag coefficient added to cca (units kg/m^2/s):
-         umag_eff = min(umag, u_cap_eff)
-         phi = (static_switch * Cs * invccc) + &
-               (quad_switch * Cq * umag) + &
-               (quad_cap_switch * Cq * umag_eff) + &
-               (linear_switch * C_L)
+         ! lateral stress
+         umag_eff         = min(umag, u_cap_eff)
+         phi_static       = Cs * invccc
+         phi_quad         = Cq * umag
+         phi_quad_cap     = Cq * umag_eff
+         phi_blend_vel    = c0
+         phi_blend_strain = c0
+         phi_quad_sat     = c0
+         if (blend_vel_switch == c1) then
+            ub            = max(u_blend, 1.0e-20_dbl_kind)
+            w_vel         = umag**blend_exp / (umag**blend_exp + ub**blend_exp)
+            phi_blend_vel = (c1 - w_vel) * phi_quad + w_vel * phi_static
+         endif
+         if (blend_strain_switch == c1) then
+            eb               = max(eps_blend, 1.0e-20_dbl_kind)
+            eps_eff          = (deltaU(i,j) + deltaU(i,j-1)) / max(uarea(i,j) + uarea(i,j-1), 1.0e-20_dbl_kind)
+            w_eps            = eps_eff**blend_exp / (eps_eff**blend_exp + eb**blend_exp)
+            phi_blend_strain = (c1 - w_eps) * phi_quad + w_eps * phi_static
+         endif
+         if (quad_sat_switch == c1) then
+            us           = max(u_sat, 1.0e-20_dbl_kind)
+            phi_quad_sat = Cq * umag / (c1 + umag / us)
+         endif
+         phi = (static_switch        * phi_static      ) + &
+               (quad_switch          * phi_quad        ) + &
+               (quad_cap_switch      * phi_quad_cap    ) + &
+               (linear_switch        * C_L             ) + &
+               (blend_vel_switch     * phi_blend_vel   ) + &
+               (blend_strain_switch  * phi_blend_strain) + &
+               (quad_sat_switch      * phi_quad_sat    )
          Cl  = Ku(i,j) * phi
 
+         ! stresses
          cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl ! kg/m^2 s
          ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw ! kg/m^2 s
 
-         ! compute the velocity components
+         ! velocity components
          cc1 = strintx(i,j) + forcex(i,j) + taux + massdti(i,j)*(brlx*uold + revp*uvel_init(i,j))
          uvel(i,j) = (ccb*vold + cc1) / cca ! m/s
 
@@ -1247,18 +1288,19 @@
 ! Integration of the momentum equation to find velocity v at N location on C grid
 
       subroutine stepv_C (nx_block,   ny_block, &
-                          icell,      Cw,       &
-                          indxi,      indxj,    &
-                                      aiX,      &
-                          uocn,       vocn,     &
-                          watery,     forcey,   &
-                          massdti,    fm,       &
-                          strinty,    tauby,    & 
-                          vvel_init,            &
-                          uvel,       vvel,     &
-                          Tb,                   &
-                          Kux,        Kuy,      &
-                          Ku)
+           icell,      Cw,       &
+           indxi,      indxj,    &
+           aiX,      &
+           uocn,       vocn,     &
+           watery,     forcey,   &
+           massdti,    fm,       &
+           strinty,    tauby,    & 
+           vvel_init,            &
+           uvel,       vvel,     &
+           Tb,                   &
+           deltaU,     uarea,   &
+           Kux,        Kuy,      &
+           Ku)
 
       integer (kind=int_kind), intent(in) :: &
          nx_block, ny_block, & ! block dimensions
@@ -1269,19 +1311,21 @@
          indxj       ! compressed index in j-direction
 
       real (kind=dbl_kind), dimension (nx_block,ny_block), intent(in) :: &
-         Tb,       & ! seabed stress factor (N/m^2)
-         vvel_init,& ! y-component of velocity (m/s), beginning of timestep
-         aiX     , & ! ice fraction on X-grid
-         watery  , & ! for ocean stress calculation, y (m/s)
-         forcey  , & ! work array: combined atm stress and ocn tilt, y
-         massdti , & ! mass of n-cell/dt (kg/m^2 s)
-         uocn    , & ! ocean current, x-direction (m/s)
-         vocn    , & ! ocean current, y-direction (m/s)
-         fm      , & ! Coriolis param. * mass in n-cell (kg/s)
-         strinty , & ! divergence of internal ice stress, y (N/m^2)
-         Cw      , & ! ocean-ice neutral drag coefficient
-         uvel    , & ! x-component of velocity (m/s) interpolated to N location
-         Ku          ! lateral (lateral) stress factor (N/m^2)
+           Tb,       & ! seabed stress factor (N/m^2)
+           deltaU,   & ! U-point deformation invariant * area (m^2/s)
+           uarea,    & ! U-point cell area (m^2)
+           vvel_init,& ! y-component of velocity (m/s), beginning of timestep
+           aiX     , & ! ice fraction on X-grid
+           watery  , & ! for ocean stress calculation, y (m/s)
+           forcey  , & ! work array: combined atm stress and ocn tilt, y
+           massdti , & ! mass of n-cell/dt (kg/m^2 s)
+           uocn    , & ! ocean current, x-direction (m/s)
+           vocn    , & ! ocean current, y-direction (m/s)
+           fm      , & ! Coriolis param. * mass in n-cell (kg/s)
+           strinty , & ! divergence of internal ice stress, y (N/m^2)
+           Cw      , & ! ocean-ice neutral drag coefficient
+           uvel    , & ! x-component of velocity (m/s) interpolated to N location
+           Ku          ! base lateral-drag factor (kg/m^2)
 
       real (kind=dbl_kind), dimension (nx_block,ny_block), intent(inout) :: &
          vvel    , & ! y-component of velocity (m/s)
@@ -1308,13 +1352,21 @@
       integer(kind=int_kind) :: n_coast
 
       ! lateral drag
+      ! real(kind=dbl_kind) :: umag, invccc, phi
       real(kind=dbl_kind) :: umag, invccc, phi
-      
+      real (kind=dbl_kind) :: &
+           ub, us, eb, w_vel, w_eps, &
+           phi_static, phi_quad, phi_quad_cap, &
+           phi_blend_vel, phi_blend_strain, phi_quad_sat, &
+           eps_eff
+
       character(len=*), parameter :: subname = '(stepv_C)'
-      
+
       sum_dv_coast = c0;
       sum_absv_coast = c0;
       n_coast = 0
+      Kux = c0
+      Kuy = c0
 
       !-----------------------------------------------------------------
       ! integrate the momentum equation
@@ -1329,8 +1381,14 @@
          i = indxi(ij)
          j = indxj(ij)
 
+         ! ice speed
          uold = uvel(i,j)
          vold = vvel(i,j)
+         ccc  = sqrt(uold**2 + vold**2) + u0
+         umag = ccc - u0
+
+         ! inverse speed
+         invccc = c1 / ccc
 
          ! (magnitude of relative ocean current)*rhow*drag*aice
          vrel = aiX(i,j)*rhow*Cw(i,j)*sqrt((uocn(i,j) - uold)**2 + &
@@ -1338,25 +1396,46 @@
          ! ice/ocean stress
          tauy = vrel*watery(i,j) ! NOTE this is not the entire ocn stress
 
-         ccc = sqrt(uold**2 + vold**2) + u0
-         ! Cb  = Tb(i,j) / ccc ! for seabed stress
-         ! Cl  = Ku(i,j) / ccc ! for lateral drag stress
-         umag   = ccc - u0
-         invccc = c1 / ccc
-         Cb     = Tb(i,j) * invccc ! seabed stress
+         ! seabed stress
+         Cb  = Tb(i,j) * invccc
 
-         ! Composite lateral drag coefficient added to cca (units kg/m^2/s):
-         umag_eff = min(umag, u_cap_eff)
-         phi = (static_switch * Cs * invccc) + &
-               (quad_switch * Cq * umag) + &
-               (quad_cap_switch * Cq * umag_eff) + &
-               (linear_switch * C_L)
+         ! lateral drag stress
+         umag_eff         = min(umag, u_cap_eff)
+         phi_static       = Cs * invccc
+         phi_quad         = Cq * umag
+         phi_quad_cap     = Cq * umag_eff
+         phi_blend_vel    = c0
+         phi_blend_strain = c0
+         phi_quad_sat     = c0
+         if (blend_vel_switch == c1) then
+            ub            = max(u_blend, 1.0e-20_dbl_kind)
+            w_vel         = umag**blend_exp / (umag**blend_exp + ub**blend_exp)
+            phi_blend_vel = (c1 - w_vel) * phi_quad + w_vel * phi_static
+         endif
+         if (blend_strain_switch == c1) then
+            eb               = max(eps_blend, 1.0e-20_dbl_kind)
+            eps_eff          = (deltaU(i,j) + deltaU(i-1,j)) / max(uarea(i,j) + uarea(i-1,j), 1.0e-20_dbl_kind)
+            w_eps            = eps_eff**blend_exp / (eps_eff**blend_exp + eb**blend_exp)
+            phi_blend_strain = (c1 - w_eps) * phi_quad + w_eps * phi_static
+         endif
+         if (quad_sat_switch == c1) then
+            us           = max(u_sat, 1.0e-20_dbl_kind)
+            phi_quad_sat = Cq * umag / (c1 + umag / us)
+         endif
+         phi = (static_switch        * phi_static      ) + &
+               (quad_switch          * phi_quad        ) + &
+               (quad_cap_switch      * phi_quad_cap    ) + &
+               (linear_switch        * C_L             ) + &
+               (blend_vel_switch     * phi_blend_vel   ) + &
+               (blend_strain_switch  * phi_blend_strain) + &
+               (quad_sat_switch      * phi_quad_sat    )
          Cl  = Ku(i,j) * phi
 
+         ! stresses
          cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl ! kg/m^2 s
          ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw ! kg/m^2 s
 
-         ! compute the velocity components
+         ! velocity components
          cc2 = strinty(i,j) + forcey(i,j) + tauy + massdti(i,j)*(brlx*vold + revp*vvel_init(i,j))
          vvel(i,j) = (-ccb*uold + cc2) / cca
 
@@ -1479,7 +1558,7 @@
             imass , & ! mass of n-cell/dt (kg/m^2 )
             F2        ! coastline form factor (drag coefficient); unitless
          real(kind=dbl_kind), dimension(nx_block,ny_block), intent(inout) :: &
-            Ku        
+            Ku
          Ku = imass * F2    ! units kg/m^2
       end subroutine lateral_drag_stress_factor
 
