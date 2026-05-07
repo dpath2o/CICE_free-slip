@@ -192,14 +192,10 @@
     lateral_drag         = .true.
     form_func            = 'blend_strain'
     Cs                   = 1.0e-4
-    Cq                   = 100.0
+    Cq                   = 50.0
     C_L                  = 0.1
-    u_sat                = 4.5e-4
-    u_blend              = 8.0e-4
     eps_blend            = 1.0e-7
     blend_exp            = 2.0
-    u_cap                = 0.0
-    u0                   = 5.0e-5
     coriolis             = 'latitude'
     kridge               = 1
     ktransport           = 1
