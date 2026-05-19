@@ -127,8 +127,8 @@
            deltaminEVP, deltaminVP, capping,     &
            elasticDamp, dyn_area_min, dyn_mass_min, &
            lateral_drag, boundary_condition, lateral_drag_stress_factor, &
-           form_func, Cs, Cq, C_L, blend_exp, eps_blend, u0, u_cap ! , &
-           ! u_blend, u_sat
+           form_func, Cs, Cq, C_L, blend_exp, blend_exp_int, eps_blend, u0, u_cap, u_blend
+           ! u_sat
       use ice_dyn_vp, only: &
           maxits_nonlin, precond, dim_fgmres, dim_pgmres, maxits_fgmres, &
           maxits_pgmres, monitor_nonlin, monitor_fgmres, &
@@ -252,8 +252,7 @@
 
       namelist /dynamics_nml/ &
            boundary_condition, lateral_drag, form_func, Cs, Cq, C_L,       &
-           blend_exp, eps_blend, u0, u_cap,                                &
-           ! u_blend, u_sat,                                                &
+           blend_exp, eps_blend, u0, u_cap, u_blend,                       &
            kdyn,           ndte,           revised_evp,    yield_curve,    &
            evp_algorithm,  elasticDamp,                                    &
            brlx,           arlx,           ssh_stress,                     &
@@ -434,8 +433,7 @@
       blend_exp             = 2.0_dbl_kind     ! smoothness/sharpness exponent for blend_vel/blend_strain
       eps_blend             = 1.0e-7_dbl_kind  ! strain-rate blending scale for form_func='blend_strain' (1/s)
       u_cap                 = 0.0_dbl_kind     ! 
-      ! u_blend               = 5.0e-4_dbl_kind  ! velocity blending scale for form_func='blend_vel' (m/s)
-      ! u_sat                 = 5.0e-4_dbl_kind  ! saturation speed scale for form_func='quad_sat' (m/s)
+      u_blend               = 1.0e-3_dbl_kind  ! velocity blending scale for form_func='blend_vel' (m/s)
       u0                    = 5.0e-4_dbl_kind ! see Lemieux et al. (2015) section 6
       kdyn                  = 1               ! type of dynamics (-1, 0 = off, 1 = evp, 2 = eap, 3 = vp)
       ndtd                  = 1               ! dynamic time steps per thermodynamic time step
@@ -1066,8 +1064,7 @@
       call broadcast_scalar(eps_blend,            master_task)
       call broadcast_scalar(u0,                   master_task)
       call broadcast_scalar(u_cap,                master_task)
-      ! call broadcast_scalar(u_blend,              master_task)
-      ! call broadcast_scalar(u_sat,                master_task)
+      call broadcast_scalar(u_blend,              master_task)
       call broadcast_scalar(kdyn,                 master_task)
       call broadcast_scalar(ndtd,                 master_task)
       call broadcast_scalar(ndte,                 master_task)
@@ -1514,16 +1511,61 @@
             endif
             abort_list = trim(abort_list)//":44"
          endif
-         if (form_func /= 'static' .and. form_func /= 'quad' .and. form_func /= 'linear' .and. form_func /= 'blend_strain') then
-              ! ! form_func /= 'quad_cap'     .and. form_func /= 'sum'          .and. &
-              ! ! form_func /= 'sum_quad_cap' 
-              ! form_func /= 'blend_vel'    .and.  .and. &
-              ! form_func /= 'quad_sat') then
+         ! lateral drag form functions
+         if (form_func /= 'static' .and. form_func /= 'quad' .and. &
+              form_func /= 'linear' .and. form_func /= 'blend_strain') then
             if (my_task == master_task) then
                write(nu_diag,*) subname//' ERROR: invalid lateral drag form function scheme'
-               write(nu_diag,*) subname//' ERROR: form_func should be: static, quad, quad_cap, sum, sum_quad_cap, linear, blend_vel, blend_strain, or quad_sat'
+               write(nu_diag,*) subname//' ERROR: form_func should be: static, quad, linear, or blend_strain'
             endif
             abort_list = trim(abort_list)//":44"
+         endif
+         ! form function parameters
+         if (lateral_drag) then
+            if (Cs < c0) then
+               if (my_task == master_task) write(nu_diag,*) subname//' ERROR: Cs must be >= 0'
+               abort_list = trim(abort_list)//":44"
+            endif
+            if (Cq < c0) then
+               if (my_task == master_task) write(nu_diag,*) subname//' ERROR: Cq must be >= 0'
+               abort_list = trim(abort_list)//":44"
+            endif
+            if (C_L < c0) then
+               if (my_task == master_task) write(nu_diag,*) subname//' ERROR: C_L must be >= 0'
+               abort_list = trim(abort_list)//":44"
+            endif
+            if (u0 <= c0) then
+               if (my_task == master_task) write(nu_diag,*) subname//' ERROR: u0 must be > 0'
+               abort_list = trim(abort_list)//":44"
+            endif
+            if (form_func == 'blend_strain') then
+               if (eps_blend <= c0) then
+                  if (my_task == master_task) write(nu_diag,*) subname//' ERROR: eps_blend must be > 0 for blend_strain'
+                  abort_list = trim(abort_list)//":44"
+               endif
+               if (u_blend <= c0) then
+                  if (my_task == master_task) write(nu_diag,*) subname//' ERROR: u_blend must be > 0 for blend_strain'
+                  abort_list = trim(abort_list)//":44"
+               endif
+               if (blend_exp <= c0) then
+                  if (my_task == master_task) write(nu_diag,*) subname//' ERROR: blend_exp must be > 0 for blend_strain'
+                  abort_list = trim(abort_list)//":44"
+               endif
+               blend_exp_int = nint(blend_exp)
+               if (abs(blend_exp - real(blend_exp_int, kind=dbl_kind)) > 1.0e-12_dbl_kind) then
+                  if (my_task == master_task) then
+                     write(nu_diag,*) subname//' ERROR: blend_exp must be integer-valued for optimized blend_strain'
+                     write(nu_diag,*) subname//' ERROR: supported values are 1.0, 2.0, 3.0, 4.0, or 5.0'
+                  endif
+                  abort_list = trim(abort_list)//":44"
+               endif
+               if (blend_exp_int < 1 .or. blend_exp_int > 5) then
+                  if (my_task == master_task) then
+                     write(nu_diag,*) subname//' ERROR: blend_exp_int must be between 1 and 5'
+                  endif
+                  abort_list = trim(abort_list)//":44"
+               endif
+            endif
          endif
          if (kdyn > 1 .or. (kdyn == 1 .and. evp_algorithm /= 'standard_2d')) then
             if (my_task == master_task) then

@@ -217,7 +217,7 @@
            f_NFSD      = .false.
 
       character (len=max_nstrm), public :: &
-!          f_example   = 'md', &
+           !          f_example   = 'md', &
            f_hi        = 'm', f_hs         = 'm', &
            f_snowfrac  = 'x', f_snowfracn  = 'x', &
            f_Tsfc      = 'm', f_aice       = 'm', &
@@ -351,7 +351,7 @@
            f_fsurfn_ai = 'x' ,f_fcondtopn_ai='x', &
            f_fmelttn_ai= 'x', f_flatn_ai   = 'x', &
            f_fsensn_ai = 'x', &
-!          f_field3dz  = 'x', &
+           !          f_field3dz  = 'x', &
            f_keffn_top = 'x', &
            f_Tinz      = 'x', f_Sinz       = 'x', &
            f_Tsnz      = 'x', &
@@ -366,6 +366,13 @@
            f_Kux  = 'x', f_Kuy  = 'x', &
            f_KuxN = 'x', f_KuyN = 'x', &
            f_KuxE = 'x', f_KuyE = 'x', &
+           f_ldphiN   = 'x', f_ldphiE   = 'x', &
+           f_ldwgtN   = 'x', f_ldwgtE   = 'x', &
+           f_ldepsN   = 'x', f_ldepsE   = 'x', &
+           f_ldspdN   = 'x', f_ldspdE   = 'x', &
+           f_ldpstatN = 'x', f_ldpstatE = 'x', &
+           f_ldpquadN = 'x', f_ldpquadE = 'x', &
+           f_ldplinN  = 'x', f_ldplinE  = 'x', &
            f_F2N  = 'x', f_F2E  = 'x'
 
       !---------------------------------------------------------------
@@ -392,17 +399,17 @@
            f_VGRDi    , f_VGRDs    , &
            f_VGRDb    , f_VGRDa    , &
            f_NFSD     , &
-!          f_example  , &
+                                !          f_example  , &
            f_hi,        f_hs       , &
            f_snowfrac,  f_snowfracn, &
            f_Tsfc,      f_aice     , &
            f_uvel,      f_vvel     , &
            f_icespd,    f_icedir   , &
-!          For now, C and CD grid quantities are controlled by the generic (originally B-grid) namelist flag
-!          f_uvelE,     f_vvelE    , &
-!          f_icespdE,   f_icedirE  , &
-!          f_uvelN,     f_vvelN    , &
-!          f_icespdN,   f_icedirN  , &
+                                !          For now, C and CD grid quantities are controlled by the generic (originally B-grid) namelist flag
+                                !          f_uvelE,     f_vvelE    , &
+                                !          f_icespdE,   f_icedirE  , &
+                                !          f_uvelN,     f_vvelN    , &
+                                !          f_icespdN,   f_icedirN  , &
            f_uatm,      f_vatm     , &
            f_atmspd,    f_atmdir   , &
            f_fswup,     &
@@ -443,18 +450,18 @@
            f_strocnx,   f_strocny  , &
            f_strintx,   f_strinty  , &
            f_taubx,     f_tauby    , &
-!          f_strairxN,  f_strairyN , &
-!          f_strtltxN,  f_strtltyN , &
-!          f_strcorxN,  f_strcoryN , &
-!          f_strocnxN,  f_strocnyN , &
-!          f_strintxN,  f_strintyN , &
-!          f_taubxN,    f_taubyN   , &
-!          f_strairxE,  f_strairyE , &
-!          f_strtltxE,  f_strtltyE , &
-!          f_strcorxE,  f_strcoryE , &
-!          f_strocnxE,  f_strocnyE , &
-!          f_strintxE,  f_strintyE , &
-!          f_taubxE,    f_taubyE   , &
+                                !          f_strairxN,  f_strairyN , &
+                                !          f_strtltxN,  f_strtltyN , &
+                                !          f_strcorxN,  f_strcoryN , &
+                                !          f_strocnxN,  f_strocnyN , &
+                                !          f_strintxN,  f_strintyN , &
+                                !          f_taubxN,    f_taubyN   , &
+                                !          f_strairxE,  f_strairyE , &
+                                !          f_strtltxE,  f_strtltyE , &
+                                !          f_strcorxE,  f_strcoryE , &
+                                !          f_strocnxE,  f_strocnyE , &
+                                !          f_strintxE,  f_strintyE , &
+                                !          f_taubxE,    f_taubyE   , &
            f_strength,  f_vort     , &
            f_divu,      f_shear    , &
            f_sig1,      f_sig2     , &
@@ -527,7 +534,7 @@
            f_fsurfn_ai,f_fcondtopn_ai,&
            f_fmelttn_ai,f_flatn_ai,  &
            f_fsensn_ai, &
-!          f_field3dz,  &
+                                !          f_field3dz,  &
            f_keffn_top, &
            f_Tinz,      f_Sinz,      &
            f_Tsnz,      &
@@ -539,9 +546,18 @@
            f_yieldstress11, &
            f_yieldstress12, &
            f_yieldstress22, &
-           f_Kux , f_Kuy, f_F2N, f_F2E , &
+           ! lateral drag
+           f_Kux , f_Kuy,  &
            f_KuxN, f_KuyN, &
-           f_KuxE, f_KuyE
+           f_KuxE, f_KuyE, &
+           f_F2N, f_F2E , &
+           f_ldphiN,   f_ldphiE, &
+           f_ldwgtN,   f_ldwgtE, &
+           f_ldepsN,   f_ldepsE, &
+           f_ldspdN,   f_ldspdE, &
+           f_ldpstatN, f_ldpstatE, &
+           f_ldpquadN, f_ldpquadE, &
+           f_ldplinN,  f_ldplinE
 
       !---------------------------------------------------------------
       ! field indices
@@ -596,7 +612,7 @@
            n_late_bnds  = 8
 
       integer (kind=int_kind), dimension(max_nstrm), public :: &
-!          n_example    , &
+           !          n_example    , &
            n_hi         , n_hs         , &
            n_snowfrac   , n_snowfracn  , &
            n_Tsfc       , n_aice       , &
@@ -732,7 +748,7 @@
            n_fmelttn_ai  , &
            n_flatn_ai    , &
            n_fsensn_ai   , &
-!          n_field3dz    , &
+           !          n_field3dz    , &
            n_keffn_top   , &
            n_Tinz        , n_Sinz      , &
            n_Tsnz        , &
@@ -743,10 +759,18 @@
            n_s22         , &
            n_yieldstress11, n_yieldstress12, &
            n_yieldstress22, &
+                                ! lateral drag
            n_Kux , n_Kuy , &
            n_KuxN, n_KuyN, &
            n_KuxE, n_KuyE, &
-           n_F2N , n_F2E
+           n_F2N , n_F2E, &
+           n_ldphiN,   n_ldphiE, &
+           n_ldwgtN,   n_ldwgtE, &
+           n_ldepsN,   n_ldepsE, &
+           n_ldspdN,   n_ldspdE, &
+           n_ldpstatN, n_ldpstatE, &
+           n_ldpquadN, n_ldpquadE, &
+           n_ldplinN,  n_ldplinE
 
       interface accum_hist_field ! generic interface
            module procedure accum_hist_field_2D, &

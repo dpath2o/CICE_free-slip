@@ -158,8 +158,8 @@
            u_cap_eff, &           ! effective cap (>=0), set in evp(dt)
            u0, &                  ! residual velocity for lateral drag stress (and seabed stress) (units m/s)
            eps_blend, &           ! strain-rate transition scale for blend_strain, s^-1
-           blend_exp              ! sharpness of transition, dimensionless
-      ! u_blend, &             ! velocity transition scale for blend_vel, m/s
+           blend_exp, &           ! sharpness of transition, dimensionless
+           u_blend                ! velocity transition scale for blend_vel, m/s
       ! u_sat                  ! saturation velocity scale for quad_sat, m/s
       ! lateral drag form function switches based 'form_func'
       ! if form_func == 'sum' then static_switch = 1, and quad_switch = 1
@@ -171,12 +171,18 @@
            ! blend_vel_switch, &
            blend_strain_switch
            ! quad_sat_switch
-      ! diagnostic lateral drag stress terms
+      ! diagnostic lateral-drag stress and form-function terms
       real(kind=dbl_kind), dimension (:,:,:), allocatable, public :: &
-         KuU , KuE , KuN, &
-         KuxU, KuyU, &
-         KuxE, KuyE, &
-         KuxN, KuyN
+           KuU , KuE , KuN, KuxU, KuyU, KuxE, KuyE, KuxN, KuyN, &
+           ldphiE,  ldphiN,  & ! realised lateral-drag damping rate phi, s^-1
+           ldwgtE,  ldwgtN,  & ! realised static/locking branch weight, 0-1
+           ldepsE,  ldepsN,  & ! effective strain-rate used by blend_strain, s^-1
+           ldspdE,  ldspdN,  & ! speed used by form function, m/s
+           ldpstatE,ldpstatN,& ! static branch phi = Cs/(|u|+u0), s^-1
+           ldpquadE,ldpquadN,& ! quadratic branch phi = Cq|u|, s^-1
+           ldplinE, ldplinN    ! linear branch phi = C_L, s^-1
+      integer (kind=int_kind), public :: &
+           blend_exp_int        ! integer exponent used by optimized blend_strain
 
       interface strain_rates_T
          module procedure strain_rates_Tdt
@@ -245,19 +251,33 @@
       if (ierr/=0) call abort_ice(subname//': Out of memory')
 
       !---------------------------------------------------------
-      ! Allocate and initialise lateral drag coefficient fields
+      ! Allocate and initialise lateral drag stress fields and diagnostics
       !---------------------------------------------------------
       allocate( &
-               KuU  (nx_block,ny_block,max_blocks), &
-               KuE  (nx_block,ny_block,max_blocks), &
-               KuN  (nx_block,ny_block,max_blocks), &
-               KuxU (nx_block,ny_block,max_blocks), &
-               KuyU (nx_block,ny_block,max_blocks), &
-               KuxE (nx_block,ny_block,max_blocks), &
-               KuyE (nx_block,ny_block,max_blocks), &
-               KuxN (nx_block,ny_block,max_blocks), &
-               KuyN (nx_block,ny_block,max_blocks), &
-               stat=ierr)
+           KuU      (nx_block,ny_block,max_blocks), &
+           KuE      (nx_block,ny_block,max_blocks), &
+           KuN      (nx_block,ny_block,max_blocks), &
+           KuxU     (nx_block,ny_block,max_blocks), &
+           KuyU     (nx_block,ny_block,max_blocks), &
+           KuxE     (nx_block,ny_block,max_blocks), &
+           KuyE     (nx_block,ny_block,max_blocks), &
+           KuxN     (nx_block,ny_block,max_blocks), &
+           KuyN     (nx_block,ny_block,max_blocks), &
+           ldphiE   (nx_block,ny_block,max_blocks), &
+           ldphiN   (nx_block,ny_block,max_blocks), &
+           ldwgtE   (nx_block,ny_block,max_blocks), &
+           ldwgtN   (nx_block,ny_block,max_blocks), &
+           ldepsE   (nx_block,ny_block,max_blocks), &
+           ldepsN   (nx_block,ny_block,max_blocks), &
+           ldspdE   (nx_block,ny_block,max_blocks), &
+           ldspdN   (nx_block,ny_block,max_blocks), &
+           ldpstatE (nx_block,ny_block,max_blocks), &
+           ldpstatN (nx_block,ny_block,max_blocks), &
+           ldpquadE (nx_block,ny_block,max_blocks), &
+           ldpquadN (nx_block,ny_block,max_blocks), &
+           ldplinE  (nx_block,ny_block,max_blocks), &
+           ldplinN  (nx_block,ny_block,max_blocks), &
+           stat=ierr)
       if (ierr/=0) call abort_ice(subname//': Out of memory')
 
       if (grid_ice == 'B' .and. evp_algorithm == "standard_2d") then
@@ -404,6 +424,7 @@
             stresspU  (i,j,iblk) = c0
             stressmU  (i,j,iblk) = c0
             stress12U (i,j,iblk) = c0
+            ! lateral drag stresses and diagnostics
             KuU       (i,j,iblk) = c0
             KuE       (i,j,iblk) = c0
             KuN       (i,j,iblk) = c0
@@ -412,7 +433,21 @@
             KuxE      (i,j,iblk) = c0
             KuyE      (i,j,iblk) = c0
             KuxN      (i,j,iblk) = c0
-            KuyN      (i,j,iblk) = c0            
+            KuyN      (i,j,iblk) = c0
+            ldphiE    (i,j,iblk) = c0
+            ldphiN    (i,j,iblk) = c0
+            ldwgtE    (i,j,iblk) = c0
+            ldwgtN    (i,j,iblk) = c0
+            ldepsE    (i,j,iblk) = c0
+            ldepsN    (i,j,iblk) = c0
+            ldspdE    (i,j,iblk) = c0
+            ldspdN    (i,j,iblk) = c0
+            ldpstatE  (i,j,iblk) = c0
+            ldpstatN  (i,j,iblk) = c0
+            ldpquadE  (i,j,iblk) = c0
+            ldpquadN  (i,j,iblk) = c0
+            ldplinE   (i,j,iblk) = c0
+            ldplinN   (i,j,iblk) = c0
          endif
 
          if (kdyn == 1) then
@@ -1133,7 +1168,9 @@
            Tb,                   &
            deltaU,     uarea,   &
            Kux,        Kuy,      &
-           Ku)
+           Ku,         write_ld_diag, &
+           ldphi,     ldwgt,      ldeps,      ldspd, &
+           ldphi_static, ldphi_quad, ldphi_linear)
 
       integer (kind=int_kind), intent(in) :: &
            nx_block, ny_block, & ! block dimensions
@@ -1158,7 +1195,17 @@
            strintx , & ! divergence of internal ice stress, x (N/m^2)
            Cw      , & ! ocean-ice neutral drag coefficient
            vvel    , & ! y-component of velocity (m/s) interpolated to E location
-           Ku          ! base lateral-drag factor (kg/m^2)
+           Ku          ! base lateral drag factor (kg/m^2)
+
+      ! lateral drag
+      real (kind=dbl_kind), dimension (nx_block,ny_block), intent(inout) :: &
+           ldphi,        & ! realised lateral-drag form function
+           ldwgt,        & ! realised static/locking branch weight
+           ldeps,        & ! effective strain-rate diagnostic
+           ldspd,        & ! local ice speed diagnostic
+           ldphi_static, & ! static branch form-function diagnostic
+           ldphi_quad,   & ! quadratic branch form-function diagnostic
+           ldphi_linear    ! linear branch form-function diagnostic
 
       real (kind=dbl_kind), dimension (nx_block,ny_block), intent(inout) :: &
            uvel    , & ! x-component of velocity (m/s)
@@ -1166,7 +1213,6 @@
            Kux, Kuy    ! lateral (lateral) stress, x/y-directions (N/m^2)
 
       ! local variables
-
       integer (kind=int_kind) :: &
            i, j, ij
 
@@ -1179,108 +1225,327 @@
            rhow               , & ! density of water
            Cl                     ! complete lateral-drag stress coeff
 
-      ! stepu_C locals (add near other locals)
-      ! real(kind=dbl_kind) :: u_noCDP, du
-      ! real(kind=dbl_kind) :: sum_du_coast, sum_absu_coast
-      ! integer(kind=int_kind) :: n_coast
-
-      ! ! lateral drag
+      ! lateral drag
       real(kind=dbl_kind) :: &
-           umag, umag_eff, invccc, phi
+           umag, invccc, phi
       real (kind=dbl_kind) :: &
-           eb, w_eps, eps_eff, &
-           phi_static, phi_quad, phi_blend_strain
-      ! ub, us, w_vel, &
-      ! phi_blend_vel,  phi_quad_cap, phi_quad_sat
+           eb, ub, eps_eff, eps_ratio, spd_ratio, &
+           eps_pow, spd_pow, &
+           w_eps, w_spd, w_lock, &
+           phi_static, phi_quad
+      logical (kind=log_kind), intent(in) :: &
+           write_ld_diag
 
       character(len=*), parameter :: subname = '(stepu_C)'
-
-      ! sum_du_coast = c0;
-      ! sum_absu_coast = c0;
-      ! n_coast = 0
-      Kux = c0
-      Kuy = c0
-
-      !-----------------------------------------------------------------
-      ! integrate the momentum equation
-      !-----------------------------------------------------------------
 
       call icepack_query_parameters(rhow_out=rhow)
       call icepack_warnings_flush(nu_diag)
       if (icepack_warnings_aborted()) call abort_ice(error_message=subname, &
          file=__FILE__, line=__LINE__)
 
-      do ij =1, icell
-         i = indxi(ij)
-         j = indxj(ij)
+      ! do ij =1, icell
+      !    i = indxi(ij)
+      !    j = indxj(ij)
 
-         ! ice speed
-         uold = uvel(i,j)
-         vold = vvel(i,j)
-         ccc  = sqrt(uold**2 + vold**2) + u0
-         umag = ccc - u0
+      !    ! ice speed
+      !    uold = uvel(i,j)
+      !    vold = vvel(i,j)
+      !    ccc  = sqrt(uold**2 + vold**2) + u0
+      !    umag = ccc - u0
 
-         ! inverse speed
-         invccc = c1 / ccc
+      !    ! inverse speed
+      !    invccc = c1 / ccc
 
-         ! (magnitude of relative ocean current)*rhow*drag*aice
-         vrel = aiX(i,j) * rhow * Cw(i,j) * sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)  ! m/s
+      !    ! (magnitude of relative ocean current)*rhow*drag*aice
+      !    vrel = aiX(i,j) * rhow * Cw(i,j) * sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)  ! m/s
 
-         ! ice/ocean stress
-         taux = vrel*waterx(i,j) ! NOTE this is not the entire stress
+      !    ! ice/ocean stress
+      !    taux = vrel*waterx(i,j) ! NOTE this is not the entire stress
 
-         ! seabed stress
-         Cb = Tb(i,j) * invccc
+      !    ! seabed stress
+      !    Cb = Tb(i,j) * invccc
 
-         ! lateral stress
-         umag_eff         = min(umag, u_cap_eff)
-         phi_static       = Cs * invccc
-         phi_quad         = Cq * umag
-         ! phi_quad_cap     = Cq * umag_eff
-         ! phi_blend_vel    = c0
-         phi_blend_strain = c0
-         ! phi_quad_sat     = c0
-         ! if (blend_vel_switch == c1) then
-         !    ub            = max(u_blend, 1.0e-20_dbl_kind)
-         !    w_vel         = umag**blend_exp / (umag**blend_exp + ub**blend_exp)
-         !    phi_blend_vel = (c1 - w_vel) * phi_quad + w_vel * phi_static
-         ! endif
-         if (blend_strain_switch == c1) then
-            eb               = max(eps_blend, 1.0e-20_dbl_kind)
-            eps_eff          = (deltaU(i,j) + deltaU(i,j-1)) / max(uarea(i,j) + uarea(i,j-1), 1.0e-20_dbl_kind)
-            w_eps            = eps_eff**blend_exp / (eps_eff**blend_exp + eb**blend_exp)
-            phi_blend_strain = (c1 - w_eps) * phi_quad + w_eps * phi_static
+      !    ! lateral stress
+      !    phi_static       = Cs * invccc
+      !    phi_quad         = Cq * umag
+      !    phi_blend_strain = c0
+      !    eps_eff          = c0
+      !    w_lock           = c0
+      !    if (blend_strain_switch == c1) then
+      !       ! deltaU is deformation invariant multiplied by U-cell area.
+      !       ! Divide by area to recover an effective strain-rate scale.
+      !       ! E-point value is formed from neighbouring U cells.
+      !       eps_eff   = (deltaU(i,j) + deltaU(i,j-1)) / max(uarea(i,j) + uarea(i,j-1), 1.0e-20_dbl_kind)
+      !       ! Low strain-rate should favour the static/locking branch.
+      !       eps_ratio = max(eps_eff, c0) / eb
+      !       w_eps     = c1 / (c1 + eps_ratio**blend_exp)
+      !       ! Low speed should favour the static/locking branch.
+      !       ! This prevents a coherent but rapidly drifting floe from being
+      !       ! treated as landfast simply because its internal strain is small.
+      !       spd_ratio = umag / ub
+      !       w_spd     = c1 / (c1 + spd_ratio**blend_exp)
+      !       ! Locking weight: static branch only when both conditions hold.
+      !       w_lock           = w_eps * w_spd
+      !       phi_blend_strain = w_lock * phi_static + (c1 - w_lock) * phi_quad
+      !    endif
+      !    phi = (static_switch        * phi_static      ) + &
+      !          (quad_switch          * phi_quad        ) + &
+      !          (linear_switch        * C_L             ) + &
+      !          (blend_strain_switch  * phi_blend_strain)
+      !    ! Diagnostic form-function fields.
+      !    ! ldwgt is the realised static/locking branch weight:
+      !    !   static       -> 1
+      !    !   quad/linear  -> 0
+      !    !   blend_strain -> w_lock
+      !    Cl = Ku(i,j) * phi
+
+      !    ! stresses
+      !    cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl ! kg/m^2 s
+      !    ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw ! kg/m^2 s
+
+      !    ! velocity components
+      !    cc1 = strintx(i,j) + forcex(i,j) + taux + massdti(i,j)*(brlx*uold + revp*uvel_init(i,j))
+      !    uvel(i,j) = (ccb*vold + cc1) / cca ! m/s
+
+      !    ! calculate seabed stress component for outputs
+      !    ! only needed on last iteration.
+      !    taubx(i,j) = -uvel(i,j)*Cb
+
+      !    ! calculate the lateral (lateral) drag stress component for output
+      !    if (write_ld_diag) then
+      !       Kux(i,j)          = -uvel(i,j)*Cl   ! tangential-to-wall at N
+      !       Kuy(i,j)          = -vvel(i,j)*Cl   ! normal-to-wall at N
+      !       ldphi(i,j)        = phi
+      !       ldwgt(i,j)        = static_switch + blend_strain_switch * w_lock
+      !       ldeps(i,j)        = eps_eff
+      !       ldspd(i,j)        = umag
+      !       ldphi_static(i,j) = phi_static
+      !       ldphi_quad(i,j)   = phi_quad
+      !       ldphi_linear(i,j) = C_L
+      !    endif
+
+      ! enddo                     ! ij
+      eb = max(eps_blend, 1.0e-20_dbl_kind)
+      ub = max(u_blend,   1.0e-20_dbl_kind)
+      if (write_ld_diag) then
+         Kux          = c0
+         Kuy          = c0
+         ldphi        = c0
+         ldwgt        = c0
+         ldeps        = c0
+         ldspd        = c0
+         ldphi_static = c0
+         ldphi_quad   = c0
+         ldphi_linear = c0
+      endif
+      !-----------------------------------------------------------------
+      ! integrate the momentum equation
+      !-----------------------------------------------------------------
+      !-----------------------------------------------------------------
+      ! blend_strain: no branch inside ij loop
+      !-----------------------------------------------------------------
+      if (blend_strain_switch == c1) then
+
+         if (write_ld_diag) then
+
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
+
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
+
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               taux = vrel * waterx(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               eps_eff = (deltaU(i,j) + deltaU(i,j-1)) / &
+                         max(uarea(i,j) + uarea(i,j-1), 1.0e-20_dbl_kind)
+
+               eps_ratio = max(eps_eff, c0) / eb
+               spd_ratio = umag / ub
+
+               eps_pow = eps_ratio ** blend_exp_int
+               spd_pow = spd_ratio ** blend_exp_int
+
+               w_eps  = c1 / (c1 + eps_pow)
+               w_spd  = c1 / (c1 + spd_pow)
+               w_lock = w_eps * w_spd
+
+               phi = w_lock * phi_static + (c1 - w_lock) * phi_quad
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc1 = strintx(i,j) + forcex(i,j) + taux + &
+                     massdti(i,j)*(brlx*uold + revp*uvel_init(i,j))
+
+               uvel(i,j) = (ccb*vold + cc1) / cca
+
+               taubx(i,j) = -uvel(i,j) * Cb
+
+               Kux(i,j) = -uvel(i,j) * Cl
+               Kuy(i,j) = -vvel(i,j) * Cl
+
+               ldphi(i,j)        = phi
+               ldwgt(i,j)        = w_lock
+               ldeps(i,j)        = eps_eff
+               ldspd(i,j)        = umag
+               ldphi_static(i,j) = phi_static
+               ldphi_quad(i,j)   = phi_quad
+               ldphi_linear(i,j) = C_L
+            enddo
+
+         else
+
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
+
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
+
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               taux = vrel * waterx(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               eps_eff = (deltaU(i,j) + deltaU(i,j-1)) / &
+                         max(uarea(i,j) + uarea(i,j-1), 1.0e-20_dbl_kind)
+
+               eps_ratio = max(eps_eff, c0) / eb
+               spd_ratio = umag / ub
+
+               eps_pow = eps_ratio ** blend_exp_int
+               spd_pow = spd_ratio ** blend_exp_int
+
+               w_eps  = c1 / (c1 + eps_pow)
+               w_spd  = c1 / (c1 + spd_pow)
+               w_lock = w_eps * w_spd
+
+               phi = w_lock * phi_static + (c1 - w_lock) * phi_quad
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc1 = strintx(i,j) + forcex(i,j) + taux + &
+                     massdti(i,j)*(brlx*uold + revp*uvel_init(i,j))
+
+               uvel(i,j) = (ccb*vold + cc1) / cca
+            enddo
+
          endif
-         ! if (quad_sat_switch == c1) then
-         !    us           = max(u_sat, 1.0e-20_dbl_kind)
-         !    phi_quad_sat = Cq * umag / (c1 + umag / us)
-         ! endif
-         phi = (static_switch        * phi_static      ) + &
-               (quad_switch          * phi_quad        ) + &
-               ! (quad_cap_switch      * phi_quad_cap    ) + &
-               (linear_switch        * C_L             ) + &
-               ! (blend_vel_switch     * phi_blend_vel   ) + &
-               (blend_strain_switch  * phi_blend_strain) 
-               ! (quad_sat_switch      * phi_quad_sat    )
-         Cl  = Ku(i,j) * phi
 
-         ! stresses
-         cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl ! kg/m^2 s
-         ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw ! kg/m^2 s
+      !-----------------------------------------------------------------
+      ! static / quad / linear: no blend branch inside ij loop
+      !-----------------------------------------------------------------
+      else
 
-         ! velocity components
-         cc1 = strintx(i,j) + forcex(i,j) + taux + massdti(i,j)*(brlx*uold + revp*uvel_init(i,j))
-         uvel(i,j) = (ccb*vold + cc1) / cca ! m/s
+         if (write_ld_diag) then
 
-         ! calculate seabed stress component for outputs
-         ! only needed on last iteration.
-         taubx(i,j) = -uvel(i,j)*Cb
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
 
-         ! calculate the lateral (lateral) drag stress component for output
-         Kux(i,j) = -uvel(i,j)*Cl   ! normal-to-wall at E
-         Kuy(i,j) = -vvel(i,j)*Cl   ! tangential-to-wall at E
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
 
-      enddo                     ! ij
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               taux = vrel * waterx(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               phi = static_switch * phi_static + &
+                     quad_switch   * phi_quad   + &
+                     linear_switch * C_L
+
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc1 = strintx(i,j) + forcex(i,j) + taux + &
+                     massdti(i,j)*(brlx*uold + revp*uvel_init(i,j))
+
+               uvel(i,j) = (ccb*vold + cc1) / cca
+
+               taubx(i,j) = -uvel(i,j) * Cb
+
+               Kux(i,j) = -uvel(i,j) * Cl
+               Kuy(i,j) = -vvel(i,j) * Cl
+
+               ldphi(i,j)        = phi
+               ldwgt(i,j)        = static_switch
+               ldeps(i,j)        = c0
+               ldspd(i,j)        = umag
+               ldphi_static(i,j) = phi_static
+               ldphi_quad(i,j)   = phi_quad
+               ldphi_linear(i,j) = C_L
+            enddo
+
+         else
+
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
+
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
+
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               taux = vrel * waterx(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               phi = static_switch * phi_static + &
+                     quad_switch   * phi_quad   + &
+                     linear_switch * C_L
+
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc1 = strintx(i,j) + forcex(i,j) + taux + &
+                     massdti(i,j)*(brlx*uold + revp*uvel_init(i,j))
+
+               uvel(i,j) = (ccb*vold + cc1) / cca
+            enddo
+
+         endif
+
+      endif
 
       end subroutine stepu_C
 
@@ -1300,7 +1565,9 @@
            Tb,                   &
            deltaU,     uarea,   &
            Kux,        Kuy,      &
-           Ku)
+           Ku,         write_ld_diag, &
+           ldphi,     ldwgt,      ldeps,      ldspd, &
+           ldphi_static, ldphi_quad, ldphi_linear)
 
       integer (kind=int_kind), intent(in) :: &
          nx_block, ny_block, & ! block dimensions
@@ -1325,7 +1592,17 @@
            strinty , & ! divergence of internal ice stress, y (N/m^2)
            Cw      , & ! ocean-ice neutral drag coefficient
            uvel    , & ! x-component of velocity (m/s) interpolated to N location
-           Ku          ! base lateral-drag factor (kg/m^2)
+           Ku          ! base lateral drag factor (kg/m^2)
+
+      ! lateral drag
+      real (kind=dbl_kind), dimension (nx_block,ny_block), intent(inout) :: &
+           ldphi,        & ! realised lateral-drag form function
+           ldwgt,        & ! realised static/locking branch weight
+           ldeps,        & ! effective strain-rate diagnostic
+           ldspd,        & ! local ice speed diagnostic
+           ldphi_static, & ! static branch form-function diagnostic
+           ldphi_quad,   & ! quadratic branch form-function diagnostic
+           ldphi_linear    ! linear branch form-function diagnostic
 
       real (kind=dbl_kind), dimension (nx_block,ny_block), intent(inout) :: &
          vvel    , & ! y-component of velocity (m/s)
@@ -1333,7 +1610,6 @@
          Kux, Kuy    ! lateral (lateral) stress, x/y-directions (N/m^2)
 
       ! local variables
-
       integer (kind=int_kind) :: &
          i, j, ij
 
@@ -1346,26 +1622,19 @@
          rhow               , & ! density of water
          Cl                     ! complete lateral-drag stress coeff
 
-      ! stepv_C locals (add near other locals)
-      ! real(kind=dbl_kind) :: v_noCDP, dv
-      ! real(kind=dbl_kind) :: sum_dv_coast, sum_absv_coast
-      ! integer(kind=int_kind) :: n_coast
-
       ! lateral drag
-      real(kind=dbl_kind) :: umag, umag_eff, invccc, phi
+      real(kind=dbl_kind) :: &
+           umag, invccc, phi
       real (kind=dbl_kind) :: &
-           eb, w_eps, eps_eff, &
-           phi_static, phi_quad, phi_blend_strain
-      ! ub, us, w_vel, &
-      ! phi_quad_cap, phi_blend_vel, phi_quad_sat
+           eb, ub, eps_eff, eps_ratio, spd_ratio, &
+           eps_pow, spd_pow, &
+           w_eps, w_spd, w_lock, &
+           phi_static, phi_quad
+      logical (kind=log_kind), intent(in) :: &
+           write_ld_diag
 
       character(len=*), parameter :: subname = '(stepv_C)'
 
-      ! sum_dv_coast = c0;
-      ! sum_absv_coast = c0;
-      ! n_coast = 0
-      Kux = c0
-      Kuy = c0
 
       !-----------------------------------------------------------------
       ! integrate the momentum equation
@@ -1376,77 +1645,314 @@
       if (icepack_warnings_aborted()) call abort_ice(error_message=subname, &
          file=__FILE__, line=__LINE__)
 
-      do ij =1, icell
-         i = indxi(ij)
-         j = indxj(ij)
+      ! do ij =1, icell
+      !    i = indxi(ij)
+      !    j = indxj(ij)
 
-         ! ice speed
-         uold = uvel(i,j)
-         vold = vvel(i,j)
-         ccc  = sqrt(uold**2 + vold**2) + u0
-         umag = ccc - u0
+      !    ! ice speed
+      !    uold = uvel(i,j)
+      !    vold = vvel(i,j)
+      !    ccc  = sqrt(uold**2 + vold**2) + u0
+      !    umag = ccc - u0
 
-         ! inverse speed
-         invccc = c1 / ccc
+      !    ! inverse speed
+      !    invccc = c1 / ccc
 
-         ! (magnitude of relative ocean current)*rhow*drag*aice
-         vrel = aiX(i,j) * rhow * Cw(i,j) * sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)  ! m/s
+      !    ! (magnitude of relative ocean current)*rhow*drag*aice
+      !    vrel = aiX(i,j) * rhow * Cw(i,j) * sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)  ! m/s
 
-         ! ice/ocean stress
-         tauy = vrel*watery(i,j) ! NOTE this is not the entire ocn stress
+      !    ! ice/ocean stress
+      !    tauy = vrel*watery(i,j) ! NOTE this is not the entire ocn stress
 
-         ! seabed stress
-         Cb  = Tb(i,j) * invccc
+      !    ! seabed stress
+      !    Cb  = Tb(i,j) * invccc
 
-         ! lateral drag stress
-         umag_eff         = min(umag, u_cap_eff)
-         phi_static       = Cs * invccc
-         phi_quad         = Cq * umag
-         ! phi_quad_cap     = Cq * umag_eff
-         ! phi_blend_vel    = c0
-         phi_blend_strain = c0
-         ! phi_quad_sat     = c0
-         ! if (blend_vel_switch == c1) then
-         !    ub            = max(u_blend, 1.0e-20_dbl_kind)
-         !    w_vel         = umag**blend_exp / (umag**blend_exp + ub**blend_exp)
-         !    phi_blend_vel = (c1 - w_vel) * phi_quad + w_vel * phi_static
-         ! endif
-         if (blend_strain_switch == c1) then
-            eb               = max(eps_blend, 1.0e-20_dbl_kind)
-            eps_eff          = (deltaU(i,j) + deltaU(i-1,j)) / max(uarea(i,j) + uarea(i-1,j), 1.0e-20_dbl_kind)
-            w_eps            = eps_eff**blend_exp / (eps_eff**blend_exp + eb**blend_exp)
-            phi_blend_strain = (c1 - w_eps) * phi_quad + w_eps * phi_static
+      !    ! lateral stress
+      !    umag_eff         = min(umag, u_cap_eff)
+      !    phi_static       = Cs * invccc
+      !    phi_quad         = Cq * umag
+      !    phi_blend_strain = c0
+      !    eps_eff          = c0
+      !    w_lock           = c0
+      !    if (blend_strain_switch == c1) then
+      !       eb        = max(eps_blend, 1.0e-20_dbl_kind)
+      !       ub        = max(u_blend,   1.0e-20_dbl_kind)
+      !       ! deltaU is deformation invariant multiplied by U-cell area.
+      !       ! Divide by area to recover an effective strain-rate scale.
+      !       ! E-point value is formed from neighbouring U cells.
+      !       eps_eff   = (deltaU(i,j) + deltaU(i-1,j)) / max(uarea(i,j) + uarea(i-1,j), 1.0e-20_dbl_kind)
+      !       ! Low strain-rate should favour the static/locking branch.
+      !       eps_ratio = max(eps_eff, c0) / eb
+      !       w_eps     = c1 / (c1 + eps_ratio**blend_exp)
+      !       ! Low speed should favour the static/locking branch.
+      !       ! This prevents a coherent but rapidly drifting floe from being
+      !       ! treated as landfast simply because its internal strain is small.
+      !       spd_ratio = umag / ub
+      !       w_spd     = c1 / (c1 + spd_ratio**blend_exp)
+      !       ! Locking weight: static branch only when both conditions hold.
+      !       w_lock           = w_eps * w_spd
+      !       phi_blend_strain = w_lock * phi_static + (c1 - w_lock) * phi_quad
+      !    endif
+      !    phi = (static_switch        * phi_static      ) + &
+      !          (quad_switch          * phi_quad        ) + &
+      !          (linear_switch        * C_L             ) + &
+      !          (blend_strain_switch  * phi_blend_strain)
+      !    ! Diagnostic form-function fields.
+      !    ! ldwgt is the realised static/locking branch weight:
+      !    !   static       -> 1
+      !    !   quad/linear  -> 0
+      !    !   blend_strain -> w_lock
+      !    Cl = Ku(i,j) * phi
+
+      !    ! stresses
+      !    cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl ! kg/m^2 s
+      !    ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw ! kg/m^2 s
+
+      !    ! velocity components
+      !    cc2 = strinty(i,j) + forcey(i,j) + tauy + massdti(i,j)*(brlx*vold + revp*vvel_init(i,j))
+      !    vvel(i,j) = (-ccb*uold + cc2) / cca
+
+      !    ! calculate seabed stress component for outputs
+      !    ! only needed on last iteration.
+      !    tauby(i,j) = -vvel(i,j)*Cb
+
+      !    ! calculate the lateral (lateral) drag stress component for output
+      !    if (write_ld_diag) then
+      !       Kux(i,j)          = -uvel(i,j)*Cl   ! tangential-to-wall at N
+      !       Kuy(i,j)          = -vvel(i,j)*Cl   ! normal-to-wall at N
+      !       ldphi(i,j)        = phi
+      !       ldwgt(i,j)        = static_switch + blend_strain_switch * w_lock
+      !       ldeps(i,j)        = eps_eff
+      !       ldspd(i,j)        = umag
+      !       ldphi_static(i,j) = phi_static
+      !       ldphi_quad(i,j)   = phi_quad
+      !       ldphi_linear(i,j) = C_L
+      !    endif
+
+      ! enddo                     ! ij=
+      eb = max(eps_blend, 1.0e-20_dbl_kind)
+      ub = max(u_blend,   1.0e-20_dbl_kind)
+      if (write_ld_diag) then
+         Kux          = c0
+         Kuy          = c0
+         ldphi        = c0
+         ldwgt        = c0
+         ldeps        = c0
+         ldspd        = c0
+         ldphi_static = c0
+         ldphi_quad   = c0
+         ldphi_linear = c0
+      endif
+      !-----------------------------------------------------------------
+      ! integrate the momentum equation
+      !-----------------------------------------------------------------
+      !-----------------------------------------------------------------
+      ! blend_strain: no branch inside ij loop
+      !-----------------------------------------------------------------
+      if (blend_strain_switch == c1) then
+
+         if (write_ld_diag) then
+
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
+
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
+
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               tauy = vrel * watery(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               eps_eff = (deltaU(i,j) + deltaU(i-1,j)) / &
+                    max(uarea(i,j) + uarea(i-1,j), 1.0e-20_dbl_kind)
+
+               eps_ratio = max(eps_eff, c0) / eb
+               spd_ratio = umag / ub
+
+               eps_pow = eps_ratio ** blend_exp_int
+               spd_pow = spd_ratio ** blend_exp_int
+
+               w_eps  = c1 / (c1 + eps_pow)
+               w_spd  = c1 / (c1 + spd_pow)
+               w_lock = w_eps * w_spd
+
+               phi = w_lock * phi_static + (c1 - w_lock) * phi_quad
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc2 = strinty(i,j) + forcey(i,j) + tauy + &
+                    massdti(i,j)*(brlx*vold + revp*vvel_init(i,j))
+
+               vvel(i,j) = (-ccb*uold + cc2) / cca
+
+               tauby(i,j) = -vvel(i,j) * Cb
+
+               Kux(i,j) = -uvel(i,j) * Cl
+               Kuy(i,j) = -vvel(i,j) * Cl
+
+               ldphi(i,j)        = phi
+               ldwgt(i,j)        = w_lock
+               ldeps(i,j)        = eps_eff
+               ldspd(i,j)        = umag
+               ldphi_static(i,j) = phi_static
+               ldphi_quad(i,j)   = phi_quad
+               ldphi_linear(i,j) = C_L
+            enddo
+
+         else
+
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
+
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
+
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               tauy = vrel * watery(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               eps_eff = (deltaU(i,j) + deltaU(i-1,j)) / &
+                    max(uarea(i,j) + uarea(i-1,j), 1.0e-20_dbl_kind)
+
+               eps_ratio = max(eps_eff, c0) / eb
+               spd_ratio = umag / ub
+
+               eps_pow = eps_ratio ** blend_exp_int
+               spd_pow = spd_ratio ** blend_exp_int
+
+               w_eps  = c1 / (c1 + eps_pow)
+               w_spd  = c1 / (c1 + spd_pow)
+               w_lock = w_eps * w_spd
+
+               phi = w_lock * phi_static + (c1 - w_lock) * phi_quad
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc2 = strinty(i,j) + forcey(i,j) + tauy + &
+                    massdti(i,j)*(brlx*vold + revp*vvel_init(i,j))
+
+               vvel(i,j) = (-ccb*uold + cc2) / cca
+
+            enddo
+
          endif
-         ! if (quad_sat_switch == c1) then
-         !    us           = max(u_sat, 1.0e-20_dbl_kind)
-         !    phi_quad_sat = Cq * umag / (c1 + umag / us)
-         ! endif
-         phi = (static_switch        * phi_static      ) + &
-               (quad_switch          * phi_quad        ) + &
-               ! (quad_cap_switch      * phi_quad_cap    ) + &
-               (linear_switch        * C_L             ) + &
-               ! (blend_vel_switch     * phi_blend_vel   ) + &
-               (blend_strain_switch  * phi_blend_strain) 
-               ! (quad_sat_switch      * phi_quad_sat    )
-         Cl  = Ku(i,j) * phi
 
-         ! stresses
-         cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl ! kg/m^2 s
-         ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw ! kg/m^2 s
+      !-----------------------------------------------------------------
+      ! static / quad / linear: no blend branch inside ij loop
+      !-----------------------------------------------------------------
+      else
 
-         ! velocity components
-         cc2 = strinty(i,j) + forcey(i,j) + tauy + massdti(i,j)*(brlx*vold + revp*vvel_init(i,j))
-         vvel(i,j) = (-ccb*uold + cc2) / cca
+         if (write_ld_diag) then
 
-         ! calculate seabed stress component for outputs
-         ! only needed on last iteration.
-         tauby(i,j) = -vvel(i,j)*Cb
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
 
-         ! calculate the lateral (lateral) drag stress component for output
-         Kux(i,j) = -uvel(i,j)*Cl   ! tangential-to-wall at N 
-         Kuy(i,j) = -vvel(i,j)*Cl   ! normal-to-wall at N
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
 
-      enddo                     ! ij=
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               tauy = vrel * watery(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               phi = static_switch * phi_static + &
+                     quad_switch   * phi_quad   + &
+                     linear_switch * C_L
+
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc2 = strinty(i,j) + forcey(i,j) + tauy + &
+                    massdti(i,j)*(brlx*vold + revp*vvel_init(i,j))
+
+               vvel(i,j) = (-ccb*uold + cc2) / cca
+
+               tauby(i,j) = -vvel(i,j) * Cb
+
+               Kux(i,j) = -uvel(i,j) * Cl
+               Kuy(i,j) = -vvel(i,j) * Cl
+
+               ldphi(i,j)        = phi
+               ldwgt(i,j)        = static_switch
+               ldeps(i,j)        = c0
+               ldspd(i,j)        = umag
+               ldphi_static(i,j) = phi_static
+               ldphi_quad(i,j)   = phi_quad
+               ldphi_linear(i,j) = C_L
+            enddo
+
+         else
+
+            do ij = 1, icell
+               i = indxi(ij)
+               j = indxj(ij)
+
+               uold = uvel(i,j)
+               vold = vvel(i,j)
+               ccc  = sqrt(uold*uold + vold*vold) + u0
+               umag = ccc - u0
+               invccc = c1 / ccc
+
+               vrel = aiX(i,j) * rhow * Cw(i,j) * &
+                      sqrt((uocn(i,j) - uold)**2 + (vocn(i,j) - vold)**2)
+
+               tauy = vrel * watery(i,j)
+               Cb   = Tb(i,j) * invccc
+
+               phi_static = Cs * invccc
+               phi_quad   = Cq * umag
+
+               phi = static_switch * phi_static + &
+                     quad_switch   * phi_quad   + &
+                     linear_switch * C_L
+
+               Cl  = Ku(i,j) * phi
+
+               cca = (brlx + revp)*massdti(i,j) + vrel * cosw + Cb + Cl
+               ccb = fm(i,j) + sign(c1,fm(i,j)) * vrel * sinw
+
+               cc2 = strinty(i,j) + forcey(i,j) + tauy + &
+                    massdti(i,j)*(brlx*vold + revp*vvel_init(i,j))
+
+               vvel(i,j) = (-ccb*uold + cc2) / cca
+
+            enddo
+
+         endif
+
+      endif
 
       end subroutine stepv_C
 
