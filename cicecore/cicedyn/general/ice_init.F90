@@ -1518,52 +1518,48 @@
                write(nu_diag,*) subname//' ERROR: invalid lateral drag form function scheme'
                write(nu_diag,*) subname//' ERROR: form_func should be: static, quad, linear, or blend_strain'
             endif
-            abort_list = trim(abort_list)//":44"
+            abort_list = trim(abort_list)//":1000"
          endif
          ! form function parameters
          if (lateral_drag) then
             if (Cs < c0) then
                if (my_task == master_task) write(nu_diag,*) subname//' ERROR: Cs must be >= 0'
-               abort_list = trim(abort_list)//":44"
+               abort_list = trim(abort_list)//":1001"
             endif
             if (Cq < c0) then
                if (my_task == master_task) write(nu_diag,*) subname//' ERROR: Cq must be >= 0'
-               abort_list = trim(abort_list)//":44"
+               abort_list = trim(abort_list)//":1002"
             endif
             if (C_L < c0) then
                if (my_task == master_task) write(nu_diag,*) subname//' ERROR: C_L must be >= 0'
-               abort_list = trim(abort_list)//":44"
+               abort_list = trim(abort_list)//":1003"
             endif
             if (u0 <= c0) then
                if (my_task == master_task) write(nu_diag,*) subname//' ERROR: u0 must be > 0'
-               abort_list = trim(abort_list)//":44"
+               abort_list = trim(abort_list)//":1004"
             endif
             if (form_func == 'blend_strain') then
                if (eps_blend <= c0) then
                   if (my_task == master_task) write(nu_diag,*) subname//' ERROR: eps_blend must be > 0 for blend_strain'
-                  abort_list = trim(abort_list)//":44"
+                  abort_list = trim(abort_list)//":1005"
                endif
                if (u_blend <= c0) then
                   if (my_task == master_task) write(nu_diag,*) subname//' ERROR: u_blend must be > 0 for blend_strain'
-                  abort_list = trim(abort_list)//":44"
+                  abort_list = trim(abort_list)//":1006"
                endif
                if (blend_exp <= c0) then
                   if (my_task == master_task) write(nu_diag,*) subname//' ERROR: blend_exp must be > 0 for blend_strain'
-                  abort_list = trim(abort_list)//":44"
+                  abort_list = trim(abort_list)//":1007"
                endif
-               blend_exp_int = nint(blend_exp)
-               if (abs(blend_exp - real(blend_exp_int, kind=dbl_kind)) > 1.0e-12_dbl_kind) then
+               blend_exp_int = nint(blend_exp, kind=int_kind)
+               if (abs(blend_exp - real(blend_exp_int, kind=dbl_kind)) > 1.0e-12_dbl_kind .or. &
+                    blend_exp_int <= 0 .or. blend_exp_int >= 30) then
                   if (my_task == master_task) then
                      write(nu_diag,*) subname//' ERROR: blend_exp must be integer-valued for optimized blend_strain'
-                     write(nu_diag,*) subname//' ERROR: supported values are 1.0, 2.0, 3.0, 4.0, or 5.0'
+                     write(nu_diag,*) subname//' ERROR: supported values are integer values 1 through 29'
+                     write(nu_diag,*) subname//' ERROR: received blend_exp = ', blend_exp
                   endif
-                  abort_list = trim(abort_list)//":44"
-               endif
-               if (blend_exp_int < 1 .or. blend_exp_int > 5) then
-                  if (my_task == master_task) then
-                     write(nu_diag,*) subname//' ERROR: blend_exp_int must be between 1 and 5'
-                  endif
-                  abort_list = trim(abort_list)//":44"
+                  abort_list = trim(abort_list)//":1008"
                endif
             endif
          endif
