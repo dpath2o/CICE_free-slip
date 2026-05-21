@@ -1,19 +1,19 @@
 &setup_nml
     days_per_year        = 365
     use_leap_years       = .true.
-    year_init            = 1993
+    year_init            = 1999
     month_init           = 1
     day_init             = 1
     sec_init             = 0
     istep0               = 0
     dt                   = 1800.0
     npt_unit             = 'm'
-    npt                  = 4
+    npt                  = 12
     ndtd                 = 1
-    runtype              = 'continue'
+    runtype              = 'initial'
     ice_ic               = 'none'
     restart_ext          = .false.
-    use_restart_time     = .true.
+    use_restart_time     = .false.
     restart_format       = 'default'
     restart_rearranger   = 'default'
     restart_iotasks      = -99
@@ -190,9 +190,9 @@
     threshold_hw         = 30.
     boundary_condition   = 'free_slip'
     lateral_drag         = .true.
-    form_func            = 'static'
+    form_func            = 'blend_strain'
     Cs                   = 5.0e-4
-    Cq                   = 0.0
+    Cq                   = 75.0
     C_L                  = 0.0
     eps_blend            = 5.0e-8
     blend_exp            = 10
@@ -314,7 +314,7 @@
     ice_data_type   = 'uniform'
     ice_data_conc   = 'default'
     ice_data_dist   = 'uniform'
-    fyear_init      = 1993    
+    fyear_init      = 1999
     ycycle          = 31
     atm_data_format = 'nc'
     atm_data_dir    = '/g/data/gv90/da1339/afim_input/ERA5/0p25/'
