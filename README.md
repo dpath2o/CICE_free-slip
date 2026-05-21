@@ -1,201 +1,496 @@
+# CICE free-slip and lateral-drag development branch
+
+**Version:** v1.0 
+**Status:** research-development branch for CICE6 free-slip boundary conditions and lateral-drag parameterisation
+**Primary application:** Antarctic landfast sea-ice process experiments
+
+This repository develops and evaluates a free-slip coastal boundary condition and explicit lateral-drag parameterisations for representing Antarctic landfast sea ice in CICE.
+
+The central physical problem is that Antarctic landfast sea ice is not simply slow pack ice. It forms where coastal geometry, ice shelves, islands, grounded icebergs, internal ice stress, and local deformation interact to immobilise otherwise mobile sea ice. This branch tests whether high-resolution coastline and grounded-iceberg form factors can provide geometric anchoring in CICE without relying on a no-slip boundary condition that directly suppresses coastal ice motion.
 
 ---
 
-## 3. Suggested top-level `README.md` for `CICE_free-slip`
+## Contents
 
-I would keep the repo README structured around the physical progression rather than code details first.
+- [Version v1.0 scope](#version-v10-scope)
+- [Scientific motivation](#scientific-motivation)
+- [Key source files](#key-source-files)
+- [Boundary-condition motivation](#boundary-condition-motivation)
+- [C-grid free-slip implementation](#c-grid-free-slip-implementation)
+- [Free-slip strain-rate expectation](#free-slip-strain-rate-expectation)
+- [Lateral-drag form factors](#lateral-drag-form-factors)
+- [Lateral-drag form functions](#lateral-drag-form-functions)
+- [Corrected `blend_strain` formulation](#corrected-blend_strain-formulation)
+- [Strain-rate normalisation](#strain-rate-normalisation)
+- [Diagnostics](#diagnostics)
+- [Namelist parameters](#namelist-parameters)
+- [Recommended v1.0 experiment configuration](#recommended-v10-experiment-configuration)
+- [Analysis workflow](#analysis-workflow)
+- [Known limitations](#known-limitations)
+- [Relationship to upstream CICE](#relationship-to-upstream-cice)
+- [License](#license)
 
-```markdown
-# CICE free-slip and lateral-drag development branch
+---
 
-This branch develops and evaluates free-slip coastal boundary conditions and lateral-drag parameterisations for representing Antarctic landfast sea ice in CICE.
+## Version v1.0 scope
 
-The central physical problem is that Antarctic landfast sea ice is not simply slow pack ice. It forms where coastal geometry, ice shelves, islands, grounded icebergs, internal ice stress, and local deformation interact to immobilise otherwise mobile sea ice. This branch tests whether high-resolution coastline and grounded-iceberg form factors can provide that geometric anchoring in CICE without imposing a no-slip boundary condition that unrealistically suppresses coastal pack-ice motion.
+Version v1.0 marks the first internally consistent version of this branch in which:
 
-## 1. Boundary-condition motivation
+1. C-grid free-slip strain-rate diagnostics compute `divergU`, `tensionU`, `shearU`, and `DeltaU`.
+2. `DeltaU` is available to the lateral-drag `blend_strain` form function as an area-normalised effective strain-rate scale.
+3. Lateral-drag diagnostics are written only on the final EVP subcycle to avoid excessive memory traffic.
+4. `blend_exp` is supported through an integer exponent pathway suitable for sensitivity experiments.
+5. Diagnostic fields are available for process-based evaluation of static, quadratic, linear, and `blend_strain` form functions.
+6. The branch is ready for multi-month and multi-year Antarctic fast-ice experiments using free-slip dynamics and static coastline/grounded-iceberg form factors.
 
-In an idealised no-slip configuration, ice velocity is forced to vanish at solid boundaries. This strongly constrains coastal motion and can promote artificial immobilisation near land.
+This is a research branch. It is not an official CICE Consortium release.
 
-A free-slip boundary condition removes the tangential no-slip constraint. This allows ice to slide along coastlines and grounded-iceberg boundaries, which is more appropriate when the goal is to let landfast ice emerge from the resolved momentum balance rather than be imposed directly by the boundary condition.
+---
 
-However, free-slip alone removes an important source of unresolved lateral resistance. This motivates an explicit lateral-drag term.
+## Scientific motivation
 
-## 2. C-grid free-slip implementation
+No-slip boundary conditions can artificially favour coastal immobilisation by forcing tangential ice velocity to vanish at coastlines and grounded obstacles. That can help produce landfast ice, but it conflates boundary-condition imposition with emergent landfast-ice physics.
 
-The C-grid implementation uses staggered E- and N-face velocity components. The free-slip boundary treatment is applied in the strain-rate and stress-divergence calculations used by the EVP dynamics.
+This branch instead uses a free-slip boundary condition and introduces an explicit lateral-drag stress of the form
 
-The relevant CICE dynamics files are:
+$$
+\boldsymbol{\tau}_{\mathrm{LD}} = - \mathrm{K}_u \, \phi \, \mathbf{u},
+$$
 
-- `cicecore/cicedyn/dynamics/ice_dyn_evp.F90`
-- `cicecore/cicedyn/dynamics/ice_dyn_shared.F90`
+where:
 
-The EVP driver in `ice_dyn_evp.F90` computes strain rates, internal stress, stress divergence, and then updates the E- and N-face velocity components through `stepu_C` and `stepv_C` in `ice_dyn_shared.F90`.
+- $K_u$ is an effective mass/form-factor term based on local ice/snow mass and static geometric form factors;
+- $\phi$ is a lateral-drag form function;
+- $\mathbf{u}$ is the relevant C-grid velocity component.
 
-## 3. Lateral-drag form factor
+The intent is that coastline and grounded-iceberg geometry define **where anchoring is possible**, while the form function determines **when the local ice state is dynamically eligible for locking**.
+
+---
+
+## Key source files
+
+The main implementation files are:
+
+```text
+cicecore/cicedyn/dynamics/ice_dyn_evp.F90
+cicecore/cicedyn/dynamics/ice_dyn_shared.F90
+cicecore/cicedyn/general/ice_init.F90
+cicecore/cicedyn/analysis/ice_history.F90
+cicecore/cicedyn/analysis/ice_history_shared.F90
+```
+
+The main analysis-side companion code is in the `shuga` toolbox (<https://github.com/dpath2o/mawsons-chest/tree/main/shuga>):
+
+```text
+shuga/grid/lateral_drag.py
+```
+
+This is used to generate and evaluate high-resolution coastline and grounded-iceberg form factors.
+
+---
+
+## Boundary-condition motivation
+
+### No-slip
+
+In an idealised no-slip configuration, ice velocity is constrained at solid boundaries. For a coastal boundary, this suppresses tangential motion and can promote artificial coastal immobilisation.
+
+### Free-slip
+
+A free-slip boundary condition removes the tangential no-slip constraint. It permits sea ice to slide along coastlines and grounded-iceberg boundaries while retaining the appropriate impermeability condition. This is a better framework when the goal is to let landfast ice emerge from the resolved momentum balance rather than impose it directly at the boundary.
+
+However, free-slip also removes an implicit source of unresolved lateral resistance. This motivates an explicit lateral-drag term.
+
+---
+
+## C-grid free-slip implementation
+
+The C-grid implementation uses staggered velocity components on E and N faces. The EVP dynamics compute strain rates, internal stresses, stress divergence, and then update the E- and N-face velocity components through:
+
+```fortran
+stepu_C
+stepv_C
+```
+
+in:
+
+```text
+cicecore/cicedyn/dynamics/ice_dyn_shared.F90
+```
+
+The EVP driver in:
+
+```text
+cicecore/cicedyn/dynamics/ice_dyn_evp.F90
+```
+
+calls the relevant strain-rate routine depending on the selected boundary condition, then passes the U-grid deformation invariant `DeltaU` into the lateral-drag velocity update.
+
+---
+
+## Free-slip strain-rate expectation
+
+The free-slip strain-rate routine should preserve a rigid-translation, zero-deformation state on a uniform grid.
+
+For a two-dimensional velocity field
+
+$$
+\mathbf{u}=(u,v),
+$$
+
+the strain-rate components are
+
+$$
+e_{11}=\frac{\partial u}{\partial x},
+\qquad
+e_{22}=\frac{\partial v}{\partial y},
+\qquad
+2e_{12}=\frac{\partial u}{\partial y}+\frac{\partial v}{\partial x}.
+$$
+
+The CICE-style diagnostics are
+
+$$
+\mathrm{div} = \frac{\partial u}{\partial x} + \frac{\partial v}{\partial y},
+$$
+
+$$
+\mathrm{tension} = \frac{\partial u}{\partial x} - \frac{\partial v}{\partial y},
+$$
+
+$$
+\mathrm{shear} = \frac{\partial u}{\partial y} + \frac{\partial v}{\partial x},
+$$
+
+and the EVP deformation invariant is
+
+$$
+\Delta U = \sqrt{\mathrm{div}^{2} + e_{\mathrm{fac}}\left(\mathrm{tension}^{2} + \mathrm{shear}^{2}\right)}.
+$$
+
+For rigid translation,
+
+$$
+u(x,y)=U_0,
+\qquad
+v(x,y)=V_0,
+$$
+
+all spatial derivatives vanish, so
+
+$$
+\mathrm{div} = \mathrm{tension} = \mathrm{shear} = \Delta U = 0.
+$$
+
+On a uniform orthogonal C-grid,
+
+$$
+dx_E=dx_U=\Delta x,
+\qquad
+dy_N=dy_U=\Delta y,
+$$
+
+and the metric-gradient correction terms vanish. The free-slip routine uses even reflection at masked neighbouring faces. For example,
+
+$$
+uN_{i+1,j} = uvelN(i+1,j)\,npm(i+1,j) + \left[npm(i,j)-npm(i+1,j)\right]\,npm(i,j)\,uvelN(i,j).
+$$
+
+If both neighbouring faces are active, this returns the neighbouring value. If the neighbouring face is masked and the interior face is active, the reflected value becomes the interior value. Therefore, for uniform velocity,
+
+$$
+uN_{i+1,j}=uN_{ij}=U_0,
+\qquad
+vE_{i,j+1}=vE_{ij}=V_0,
+$$
+
+and similarly for the shear terms. Thus,
+
+$$
+\mathrm{divergU} = \mathrm{tensionU} = \mathrm{shearU} = \Delta U = 0.
+$$
+
+This is a verification condition for idealised uniform-grid tests. It does **not** imply that free-slip always produces zero deformation. In realistic Antarctic simulations, nonzero `DeltaU` is expected because of spatially variable forcing, internal stress, coastlines, grounded icebergs, form factors, ice thickness gradients, concentration gradients, and ocean-current gradients.
+
+---
+
+## Lateral-drag form factors
 
 Lateral drag is applied where high-resolution coastline and grounded-iceberg geometry indicate unresolved lateral contact or anchoring potential.
 
-The static geometric factor is represented through E- and N-face form factors:
-
-- `F2E`
-- `F2N`
-
-The effective lateral-drag mass/form factor is:
+The static geometric factors are represented on the C-grid velocity faces as:
 
 ```text
-Ku = M_x F2
+F2E
+F2N
 ```
 
-where M_x is the velocity-grid ice/snow mass and F2 is the local form factor. This makes the lateral stress scale with both the available ice mass and the local geometric exposure to coastline or grounded-iceberg anchoring.
+The effective lateral-drag mass/form factor is
 
-The lateral-drag stress is applied as a dissipative momentum sink:
+$$
+\mathrm{K}_u = \mathrm{M}_u \mathrm{F}_2,
+$$
 
-tau_LD = - Ku phi u
+where $\mathrm{M}_u$ is the velocity-grid ice/snow mass and $\mathrm{F}_2$ is the local geometric form factor. This makes the lateral stress scale with both available ice mass and local geometric exposure to coastline or grounded-iceberg anchoring.
 
-where phi is the selected lateral-drag form function.
+Compared with a coastline-only implementation, this branch explicitly supports form-factor contributions from grounded icebergs. Grounded icebergs are treated as additional static anchoring geometry, with geometric properties that can be incorporated into the high-resolution form-factor generation workflow.
 
-4. Lateral-drag form functions
+---
 
-The implementation supports several form functions for evaluating the damping rate phi.
+## Lateral-drag form functions
 
-static
-phi_static = Cs / (|u| + u0)
+The lateral-drag stress is applied as
 
-This is the Liu-style reference branch. It produces a strong low-speed locking tendency while remaining regularised by u0.
+$$
+\boldsymbol{\tau}_{\mathrm{LD}} = - \mathrm{K}_u \, \phi \, \mathbf{u}.
+$$
 
-quadratic
-phi_quad = Cq |u|
+The scalar form function $\phi$ is selected by `form_func`.
 
-This is a mobile, velocity-scaled branch. It becomes weak at low speed and stronger for faster moving ice.
+### `static`
 
-linear
-phi_linear = C_L
+$$
+\phi_{\mathrm{static}} = \frac{\mathrm{C}_\mathrm{s}{|\mathbf{u}|+u_0}.
+$$
+
+This is the Liu-style reference branch. It produces strong low-speed damping while remaining regularised by $u_0$.
+
+### `quad`
+
+$$
+\phi_{\mathrm{quad}} = \mathrm{C}_\mathrm{q} |\mathbf{u}|.
+$$
+
+This is a velocity-scaled mobile branch. It is weak near zero speed and stronger for faster-moving ice.
+
+### `linear`
+
+$$
+\phi_{\mathrm{linear}} = \mathrm{C}_\mathrm{L}.
+$$
 
 This is a Rayleigh-style damping branch.
 
-blend_strain
+### `blend_strain`
 
-The corrected blend_strain formulation combines a static locking branch and a quadratic mobile branch using both speed and strain-rate gates.
+The corrected `blend_strain` form function blends the static and quadratic branches using both speed and strain-rate gates.
 
-w_eps  = 1 / (1 + (eps_eff / eps_blend)^p)
-w_u    = 1 / (1 + (|u| / u_blend)^p)
-w_lock = w_eps w_u
+---
 
-phi_blend = w_lock phi_static + (1 - w_lock) phi_quad
+## Corrected `blend_strain` formulation
+
+The corrected `blend_strain` formulation computes:
+
+$$
+w_\epsilon = \frac{1} {1+\left(\epsilon_{\mathrm{eff}}/\epsilon_{\mathrm{blend}}\right)^p},
+$$
+
+$$
+w_u = \frac{1}{1+\left(|\mathbf{u}|/u_{\mathrm{blend}}\right)^p},
+$$
+
+$$
+w_{\mathrm{lock}} = w_\epsilon w_u.
+$$
+
+The realised form function is
+
+$$
+\phi_{\mathrm{blend}} = w_{\mathrm{lock}}\phi_{\mathrm{static}} + \left(1-w_{\mathrm{lock}}\right)\phi_{\mathrm{quad}}.
+$$
 
 Thus:
 
-low speed + low strain-rate  -> static/locking branch
+```text
+low speed + low strain rate  -> static/locking branch
 high speed or high strain    -> quadratic/mobile branch
+```
 
-This formulation is designed to permit landfast ice to emerge where ice is slow, coherent, and geometrically anchored, while allowing mobile or deforming pack ice to remain dynamically mobile.
+This formulation is designed to permit landfast ice to emerge where the ice is slow, coherent, and geometrically anchored, while allowing mobile or deforming pack ice to remain dynamically mobile.
 
-5. Strain-rate normalisation
+For computational efficiency, `blend_exp` is treated as an integer-valued exponent in the optimized path. The intended supported values are:
 
-The C-grid strain-rate diagnostic deltaU is a deformation invariant multiplied by U-cell area. Therefore the effective strain rate used by blend_strain is area-normalised before comparison with eps_blend.
+```text
+blend_exp = 1, 2, 3, 4, 5, ..., 30
+```
+
+---
+
+## Strain-rate normalisation
+
+The C-grid diagnostic `DeltaU` is an EVP deformation invariant multiplied by U-cell area. Therefore, the effective strain rate used by `blend_strain` is area-normalised before comparison with `eps_blend`.
 
 For E-face velocity points:
 
-eps_eff = (deltaU(i,j) + deltaU(i,j-1)) / (uarea(i,j) + uarea(i,j-1))
+$$
+\epsilon_{\mathrm{eff,E}}(i,j) = \frac{\Delta U(i,j)+\Delta U(i,j-1)}{A_U(i,j)+A_U(i,j-1)}.
+$$
 
 For N-face velocity points:
 
-eps_eff = (deltaU(i,j) + deltaU(i-1,j)) / (uarea(i,j) + uarea(i-1,j))
+$$
+\epsilon_{\mathrm{eff,N}}(i,j) = \frac{\Delta U(i,j)+\Delta U(i-1,j)}{A_U(i,j)+A_U(i-1,j)}.
+$$
 
-This produces a strain-rate scale in s^-1.
+This produces a strain-rate scale in $s^{-1}$, suitable for comparison with `eps_blend`.
 
-6. Diagnostics
+---
 
-The branch includes lateral-drag diagnostics intended to support process-based evaluation rather than tuning against fast-ice area alone.
+## Diagnostics
+
+This branch includes lateral-drag diagnostics intended to support process-based evaluation rather than tuning only against aggregate fast-ice area.
 
 Key diagnostics include:
 
-KuxE, KuyE, KuxN, KuyN: lateral-drag stress components
-F2E, F2N: geometric form factors
-ldphiE, ldphiN: realised damping rate
-ldwgtE, ldwgtN: static/locking branch weight
-ldepsE, ldepsN: effective strain rate used by blend_strain
-ldspdE, ldspdN: speed used by the form function
-ldpstatE, ldpstatN: static branch damping-rate diagnostic
-ldpquadE, ldpquadN: quadratic branch damping-rate diagnostic
-ldplinE, ldplinN: linear branch damping-rate diagnostic
+| Diagnostic | Meaning |
+|---|---|
+| `F2E`, `F2N` | Static geometric form factors |
+| `KuxE`, `KuyE`, `KuxN`, `KuyN` | Lateral-drag stress components |
+| `ldphiE`, `ldphiN` | Realised form function $\phi$ |
+| `ldwgtE`, `ldwgtN` | Static/locking branch weight $w_{\mathrm{lock}}$ |
+| `ldepsE`, `ldepsN` | Effective strain rate used by `blend_strain` |
+| `ldspdE`, `ldspdN` | Speed used by the form function |
+| `ldpstatE`, `ldpstatN` | Static branch damping-rate diagnostic |
+| `ldpquadE`, `ldpquadN` | Quadratic branch damping-rate diagnostic |
+| `ldplinE`, `ldplinN` | Linear branch damping-rate diagnostic |
 
-These diagnostics are written only on the final EVP subcycle to avoid excessive memory traffic within the dynamics loop.
+These diagnostics are written only on the final EVP subcycle. This avoids excessive memory traffic inside the dynamics loop while preserving daily or sub-daily diagnostic output for process analysis.
 
-7. Recommended interpretation
+All new history-field flags must be included consistently in:
 
-The intended public-facing CICE options are:
+```text
+ice_history_shared.F90
+ice_history.F90
+```
 
-static: simple Liu-style lateral-drag reference
-blend_strain: physically gated extension for Antarctic landfast ice
-
-The quadratic and linear branches are retained as diagnostic comparators and sensitivity tools.
-
-8. Current experiment focus
-
-The current Sep-Dec 1994 experiment set tests whether corrected blend_strain can improve Antarctic fast-ice formation, persistence, and retreat relative to heavier-handed static, quadratic, and linear form functions.
-
-The primary corrected blend_strain hypothesis is:
-
-u_blend   = 5.0e-4 m s^-1
-eps_blend = 5.0e-8 s^-1
-blend_exp = 3.0
-
-For representative Antarctic fast-ice cell scales of approximately 12 km, this aligns the speed and strain-rate gates across the fast-ice velocity range.
-
+including declaration, namelist entry, broadcast, field definition, and accumulation. Missing broadcasts can cause MPI/PIO collective mismatches during history writing.
 
 ---
 
-Present status: implementing the `blend_exp_int` change, smoke-test `blend_exp = 3.0` for a few days, then launch `LD-blend-base`, `smooth`, and `sharp` before the stricter/permissive cases.
+## Namelist parameters
+
+The lateral-drag implementation uses the following dynamics namelist parameters.
+
+| Parameter | Meaning |
+|---|---|
+| `boundary_condition` | Boundary condition, e.g. `'free_slip'` |
+| `lateral_drag` | Enables/disables lateral drag |
+| `form_func` | Selects `static`, `quad`, `linear`, or `blend_strain` |
+| `Cs` | Static branch coefficient |
+| `Cq` | Quadratic branch coefficient |
+| `C_L` | Linear branch coefficient |
+| `u0` | Low-speed regularisation |
+| `u_blend` | Speed transition scale for `blend_strain` |
+| `eps_blend` | Effective strain-rate transition scale for `blend_strain` |
+| `blend_exp` | Blend transition exponent |
+| `u_cap` | Optional speed cap, if enabled in the active implementation |
 
 ---
 
-<!--- [![Travis-CI](https://travis-ci.org/CICE-Consortium/CICE.svg?branch=main)](https://travis-ci.org/CICE-Consortium/CICE) --->
-[![GHActions](https://github.com/CICE-Consortium/CICE/workflows/GHActions/badge.svg)](https://github.com/CICE-Consortium/CICE/actions)
-[![Documentation Status](https://readthedocs.org/projects/cice-consortium-cice/badge/?version=main)](http://cice-consortium-cice.readthedocs.io/en/main/?badge=main)
-[![lcov](https://img.shields.io/endpoint?url=https://apcraig.github.io/coverage.json)](https://apcraig.github.io)
+## v1.0 experiment configuration
 
-<!--- [![codecov](https://codecov.io/gh/apcraig/Test_CICE_Icepack/branch/master/graph/badge.svg)](https://codecov.io/gh/apcraig/Test_CICE_Icepack) --->
+The current v1.0 `LD-blend-base` candidate uses:
 
-## The CICE Consortium sea-ice model
-CICE is a computationally efficient model for simulating the growth, melting, and movement of polar sea ice. Designed as one component of coupled atmosphere-ocean-land-ice global coupled models, today’s CICE model is the outcome of more than two decades of community collaboration in building a sea ice model suitable for multiple uses including process studies, operational forecasting, and Earth system simulation.
+```fortran
+ndte                 = 360
+Pstar                = 2.75e4
+Cstar                = 20
+Ktens                = 0.2
+e_yieldcurve         = 1.5
+e_plasticpot         = 1.5
 
+boundary_condition   = 'free_slip'
+lateral_drag         = .true.
+form_func            = 'blend_strain'
 
-This repository contains the files and code needed to run the CICE sea ice numerical model starting with version 6. CICE is maintained by the CICE Consortium. 
-Versions prior to v6 are found in the [CICE-svn-trunk repository](https://github.com/CICE-Consortium/CICE-svn-trunk).
+Cs                   = 2.5e-4
+Cq                   = 350.0
+C_L                  = 0.0
+eps_blend            = 5.0e-8
+blend_exp            = 3.0
+u_blend              = 5.0e-4
+```
 
-CICE consists of a top level driver and dynamical core plus the [Icepack][icepack] column physics code], which is included in CICE as a Git submodule.  Because Icepack is a submodule of CICE, Icepack and CICE development are handled independently with respect to the GitHub repositories even though development and testing may be done together.  
+The intended multi-year comparison set includes:
 
-[icepack]: https://github.com/CICE-Consortium/Icepack
+```text
+LD-NIL
+LD-static-Cs5e-4
+LD-quad-Cq75
+LD-linear-0p25
+LD-blend-base
+LD-blend-Cq75-exp20
+```
 
-The first point of contact with the CICE Consortium is the Consortium Community [Forum][forum]. 
-This forum is monitored by Consortium members and also opened to the whole community.
-Please do not use our issue tracker for general support questions.
+These experiments are designed to test whether the corrected `blend_strain` formulation improves Antarctic fast-ice behaviour relative to no lateral drag, static drag, quadratic drag, and linear drag.
 
-[forum]: https://xenforo.cgd.ucar.edu/cesm/forums/cice-consortium.146/
+---
 
-If you expect to make any changes to the code, we recommend that you first fork both the CICE and Icepack repositories. 
-In order to incorporate your developments into the Consortium code it is imperative you follow the guidance for Pull Requests and requisite testing.
-Head over to our [Contributing][contributing] guide to learn more about how you can help improve CICE.
+## Analysis workflow
 
-[contributing]: https://github.com/CICE-Consortium/About-Us/wiki/Contributing
+The recommended analysis workflow uses the `shuga` Python toolbox for:
 
-## Useful links
-* **CICE wiki**: https://github.com/CICE-Consortium/CICE/wiki
+1. CICE history conversion to Zarr;
+2. binary-days fast-ice classification;
+3. fast-ice area and persistence metrics;
+4. comparison against the AF2020 Antarctic fast-ice dataset;
+5. lateral-drag diagnostic analysis.
 
-   Information about the CICE model
+The preferred process diagnostics include:
 
-* **CICE Release Table**: https://github.com/CICE-Consortium/CICE/wiki/CICE-Release-Table
+- FIA time series;
+- regional FIA;
+- hit, miss, and false-alarm maps against AF2020;
+- `ldwgt` phase-space plots;
+- `ldphi` phase-space plots;
+- `ldeps` and `ldspd` distributions;
+- pack-ice collateral checks, including SIA, thickness, and speed.
 
-   Numbered CICE releases since version 6 with associated documentation and DOIs. 
-   
-* **Consortium Community Forum**: https://xenforo.cgd.ucar.edu/cesm/forums/cice-consortium.146/
+The most important diagnostic distinction is:
 
-   First point of contact for discussing model development including bugs, diagnostics, and future directions.   
+```text
+ldwgt -> which branch is active
+ldphi -> what damping rate the momentum equation receives
+```
 
-* **Resource Index**: https://github.com/CICE-Consortium/About-Us/wiki/Resource-Index
+A high `ldphi` value does not necessarily imply static locking, because the quadratic branch can also produce large damping at high speeds. `ldwgt` is the direct diagnostic of static/locking branch contribution.
 
-   List of resources for information about the Consortium and its repositories as well as model documentation, testing, and development.
+---
+
+## Known limitations
+
+- This branch is a research-development branch, not an official CICE release.
+- Form-factor generation depends on external high-resolution coastline and grounded-iceberg datasets.
+- `eps_blend` is a resolved-grid strain-rate threshold, not a universal material constant.
+- `blend_strain` sensitivity must be evaluated with diagnostics; circum-Antarctic FIA alone is insufficient.
+- The current implementation focuses on C-grid dynamics.
+- The final recommended parameter set remains experiment-dependent and should be evaluated regionally, not only circum-Antarctic.
+
+---
+
+## Relationship to upstream CICE
+
+CICE is maintained by the CICE Consortium. This repository is a development branch/fork for testing free-slip and lateral-drag parameterisations.
+
+Useful upstream resources:
+
+- CICE Consortium repository: <https://github.com/CICE-Consortium/CICE>
+- CICE documentation: <https://cice-consortium-cice.readthedocs.io/>
+- CICE wiki: <https://github.com/CICE-Consortium/CICE/wiki>
+- Icepack: <https://github.com/CICE-Consortium/Icepack>
+- CICE Consortium forum: <https://xenforo.cgd.ucar.edu/cesm/forums/cice-consortium.146/>
+
+For general CICE support, use the CICE Consortium forum rather than this development branch.
+
+---
 
 ## License
-See our [License](LICENSE.pdf) and [Distribution Policy](DistributionPolicy.pdf).
+
+This branch inherits the upstream CICE license and distribution policy. See:
+
+```text
+LICENSE.pdf
+DistributionPolicy.pdf
+```
+
+where present in the repository.
