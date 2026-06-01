@@ -191,12 +191,12 @@
     boundary_condition   = 'free_slip'
     lateral_drag         = .true.
     form_func            = 'blend_strain'
-    Cs                   = 5.0e-4
+    Cs                   = 7.5e-4
     Cq                   = 75.0
     C_L                  = 0.0
     eps_blend            = 5.0e-8
     blend_exp            = 3
-    u_blend              = 5.0e-4
+    u_blend              = 7.5e-4
     coriolis             = 'latitude'
     kridge               = 1
     ktransport           = 1

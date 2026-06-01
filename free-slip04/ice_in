@@ -174,9 +174,9 @@
     Pstar                = 2.75e4
     Cstar                = 20
     Cf                   = 17.
-    Ktens                = 0.05
+    Ktens                = 0.1
     e_yieldcurve         = 1.5
-    e_plasticpot         = 1.5
+    e_plasticpot         = 2.0
     visc_method          = 'avg_zeta'
     elasticDamp          = 0.09d0
     deltaminEVP          = 1e-11
@@ -189,10 +189,10 @@
     alphab               = 20.
     threshold_hw         = 30.
     boundary_condition   = 'free_slip'
-    lateral_drag         = .false.
+    lateral_drag         = .true.
     form_func            = 'blend_strain'
-    Cs                   = 0.0
-    Cq                   = 0.0
+    Cs                   = 5.0e-4
+    Cq                   = 75.0
     C_L                  = 0.0
     eps_blend            = 5.0e-8
     blend_exp            = 3

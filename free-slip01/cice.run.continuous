@@ -1,6 +1,6 @@
 #!/bin/csh -f
 #PBS -N free-slip01-cice-year
-#PBS -P gv90
+#PBS -P oz91
 #PBS -q normalbw
 #PBS -l walltime=10:00:00
 #PBS -l ncpus=1232
