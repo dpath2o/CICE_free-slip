@@ -24,7 +24,8 @@ The central physical problem is that Antarctic landfast sea ice is not simply sl
 - [Strain-rate normalisation](#strain-rate-normalisation)
 - [Diagnostics](#diagnostics)
 - [Namelist parameters](#namelist-parameters)
-- [Recommended v1.0 experiment configuration](#recommended-v10-experiment-configuration)
+- [v1.0 test-configuration experiments](#v10-experiment-configuration)
+- [v2.0 publication experiments](#v20-experiment-publication-experiments)
 - [Analysis workflow](#analysis-workflow)
 - [Known limitations](#known-limitations)
 - [Relationship to upstream CICE](#relationship-to-upstream-cice)
@@ -290,13 +291,13 @@ w_u = \frac{1}{1+\left(|\mathbf{u}|/u_{\mathrm{blend}}\right)^p},
 $$
 
 $$
-w_{\mathrm{lock}} = w_\epsilon w_u.
+w_{\mathrm{L}} = w_\epsilon w_u.
 $$
 
 The realised form function is
 
 $$
-\phi_{\mathrm{blend}} = w_{\mathrm{lock}}\phi_{\mathrm{static}} + \left(1-w_{\mathrm{lock}}\right)\phi_{\mathrm{quad}}.
+\phi_{\mathrm{blend}} = w_{\mathrm{L}}\phi_{\mathrm{static}} + \left(1-w_{\mathrm{L}}\right)\phi_{\mathrm{quad}}.
 $$
 
 Thus:
@@ -426,6 +427,62 @@ These experiments are designed to test whether the corrected `blend_strain` form
 
 ---
 
+## v2.0 Experiment Publication Experiments
+
+After revising geometric form-factor construction (see [shuga/docs/lateral_drag.md](https://github.com/dpath2o/mawsons-chest/blob/main/shuga/docs/lateral_drag.md)) here I'll attempt to record the scientific intent of the CICE lateral-drag experiment suite for the GMD publication. The table is ordered from the `no-slip` reference case through to `blend-strain`. All cases/experiments are intended to share the same grid, forcing, timestep, history output, restart configuration, and forcing-data paths. The scientific differences are restricted to the lateral boundary condition, tensile/yield-curve settings, and the lateral-drag form-function parameters.
+
+### Common non-default configuration
+
+The suite uses daily averaged history output and a 30-minute thermodynamic/dynamic timestep:
+
+```text
+use_leap_years = .true.
+dt             = 1800
+npt_unit       = 'm'
+npt            = 1
+diagfreq       = 24
+histfreq       = 'd'
+hist_avg       = .true.
+```
+
+The shared dynamic settings are:
+
+```text
+ndte          = 360
+kdyn          = 1
+kstrength     = 0
+```
+
+Unless otherwise specified, the `free-slip` lateral-drag sensitivity cases use (most likely!!):
+
+```text
+Ktens         = 0.05
+e_yieldcurve  = 1.5
+e_plasticpot  = 1.5
+```
+
+### Experiment progression
+
+| Order | Sub-directory | Experiment (Punlication) Name | Scientific/Code change | Scientific role in the paper |
+|---:|---|---|---|---|
+| 0 | `no-slip-def` | `no-slip-def` | `no-slip` BC; no lateral drag. | Reference configuration for the *traditional* lateral boundary treatment. Separates effect of `free-slip` BC (and lateral-drag framework/scheme/closure) from the *traditional* `no-slip` CICE configuration. Good comparison to `free-slip-def`. |
+| 0 | `no-slip-LFI` | `no-slip-LFI` | `no-slip` BC; no lateral drag; `Ktens = 0.2`, `e_yieldcurve = 1.2`, `e_plasticpot = 1.2` | Rheology favours LFI. Tests whether tensile strength and a less elongated yield-curve (normal flow rule) geometry can increase LFI (more precisely: mechanically persistent ice) without invoking `free-slip` lateral drag. Good comparative to `free-slip-LFI` |
+| 1 | `free-slip01` | `free-slip-def` | `free-slip` BC; no lateral drag; `Ktens = 0.0`, `e_yieldcurve = 2.0`, `e_plasticpot = 2.0`. | Boundary-condition baseline. Isolates effect of replacing `no-slip` BC with `free-slip` BC before adding either tensile-strength/yield-curve changes or lateral drag closure. Good comparative to `no-slip-def`. |
+| 2 | `free-slip02` | `free-slip-LFI` | `free-slip` BC; no lateral drag; `Ktens = 0.2`, `e_yieldcurve = 1.2`, `e_plasticpot = 1.2`. | Rheology favours LFI. Tests whether tensile strength and a less elongated yield-curve (normal flow rule) geometry can increase LFI without invoking lateral drag. |
+| 3 | `free-slip03` | `free-slip-ktens-low` | `free-slip` BC; no lateral drag; `Ktens = 0.05`, `e_yieldcurve = 1.5`, `e_plasticpot = 1.5`. | Rheology *traditionally* less favourable for LFI. **May not be carried out once first year results are in for `Cs-high` experiment below**|
+| 4 | `free-slip04` | `Cs-low` | `form_func = 'static'`, `Cs = 1.0e-4`. | Tests the low-end of a speed-independent resisting-stress contribution over the relevant fast-ice speed range. Liu et. al (2022) used value.|
+| 5 | `free-slip05` | `Cs-mid` | `form_func = 'static'`, `Cs = 5.0e-4`. | Evaluates a moderate speed-independent lateral resisting stress can improve FIA.|
+| 6 | `free-slip` | `Cs-high`| `form_func = 'static'`, `Cs = 1.0e-3`. | Provides upper end of the `static` coefficient sweep, acts as a *strong* speed-independent lateral resisting-stress case. Factor of 10 greater than Liu et. al (2022)|
+| 7 | `free-slip06` | `Cq-low` | `form_func = 'quad'`, `Cq = 1.0`. | Tests the low end of a drag law whose resisting stress is small at low speed and increases rapidly with ice speed. Liu et. al (2022) used value.|
+| 8 | `free-slip07` | `Cq-mid` | `form_func = 'quad'`, `Cq = 75.0`. | Tests a moderate quadratic response and provides contrast with the intermediate static branch. |
+| 9 | `free-slip08` | `Cq-high` | `form_func = 'quad'`, `Cq = 350.0`. | Tests whether a large quadratic coefficient can provide sufficient resisting stress near the low-speed fast-ice classification threshold while retaining stronger sensitivity at higher speeds. |
+| 10 | `free-slip09` | `Cl-low` | `form_func = 'linear'`, `C_L = 0.10`. | Provides a weak linear reference between the approximately speed-independent static branch and the speed-squared quadratic branch. |
+| 11 | `free-slip10` | `Cl-mid` | `form_func = 'linear'`, `C_L = 0.25`. | Tests whether a simple linear stress scaling provides a useful balance between low-speed resistance and higher-speed response. |
+| 12 | `free-slip11` | `Cl-high` | `form_func = 'linear'`, `C_L = 0.50`. | Provides the *strong* end of the linear sweep and a direct comparison against the strongest static and quadratic cases. |
+| 13 | `free-slip12` | `blend-strain` | `form_func = 'blend_strain'`, `Cs = 5.0e-4`, `Cq = 75.0`, `u_blend = 5.0e-4`, `eps_blend = 5.0e-8`, `blend_exp = 3`. | Tests whether using both ice speed and resolved deformation provide a more physically selective lateral-drag response than *speed-only* static, linear, or quadratic branches. |
+
+---
+
 ## Analysis workflow
 
 The recommended analysis workflow uses the `shuga` Python toolbox for:
@@ -465,8 +522,6 @@ A high `ldphi` value does not necessarily imply static locking, because the quad
 - `blend_strain` sensitivity must be evaluated with diagnostics; circum-Antarctic FIA alone is insufficient.
 - The current implementation focuses on C-grid dynamics.
 - The final recommended parameter set remains experiment-dependent and should be evaluated regionally, not only circum-Antarctic.
-
----
 
 ## Relationship to upstream CICE
 
