@@ -1,7 +1,7 @@
 &setup_nml
     days_per_year        = 365
     use_leap_years       = .true.
-    year_init            = 1999
+    year_init            = 1995
     month_init           = 1
     day_init             = 1
     sec_init             = 0
@@ -34,7 +34,7 @@
     dumpfreq_base        = 'init','init','init','init','init'
     dump_last            = .false.
     bfbflag              = 'off'
-    diagfreq             = 6
+    diagfreq             = 24
     diag_type            = 'file'
     diag_file            = 'ice_diag.d'
     debug_model          = .false.
@@ -89,9 +89,9 @@
     use_bathymetry    = .false.
     gridcpl_file      = 'unknown_gridcpl_file'
     grid_outfile      = .false.
-    F2_file           = '/g/data/gv90/da1339/coastal_drag/form_factors/ADD_high-res_cstln_v7p9_GI_CICE_free-slip.nc'
-    F2x_varname       = 'F2x'
-    F2y_varname       = 'F2y'
+    F2_file           = '/g/data/gv90/da1339/form_factors/FF_combined_meth-max_cst-v7p9-Liu_GIB-v1p2-perimeter_Liu_CICE.nc'
+    F2x_varname       = 'FFx'
+    F2y_varname       = 'FFy'
     F2_map_method     = 'max'
     F2_test           = .false.
     F2_test_val       = 0.25
@@ -176,7 +176,7 @@
     Pstar                = 2.75e4
     Cstar                = 20
     Cf                   = 17.
-    Ktens                = 0.05
+    Ktens                = 0.1
     e_yieldcurve         = 1.5
     e_plasticpot         = 1.5
     visc_method          = 'avg_zeta'
@@ -192,13 +192,13 @@
     threshold_hw         = 30.
     boundary_condition   = 'free_slip'
     lateral_drag         = .true.
-    form_func            = 'blend_strain'
-    Cs                   = 7.5e-4
-    Cq                   = 75.0
+    form_func            = 'static'
+    Cs                   = 1.0e-3
+    Cq                   = 0.0
     C_L                  = 0.0
-    eps_blend            = 5.0e-8
-    blend_exp            = 3
-    u_blend              = 7.5e-4
+    eps_blend            = 0.0
+    blend_exp            = 0
+    u_blend              = 0.0
     coriolis             = 'latitude'
     kridge               = 1
     ktransport           = 1
@@ -316,7 +316,7 @@
     ice_data_type   = 'uniform'
     ice_data_conc   = 'default'
     ice_data_dist   = 'uniform'
-    fyear_init      = 1999
+    fyear_init      = 1995
     ycycle          = 31
     atm_data_format = 'nc'
     atm_data_dir    = '/g/data/gv90/da1339/afim_input/ERA5/0p25/'
@@ -541,9 +541,9 @@
     f_fswdn        = 'x'
     f_flwdn        = 'x'
     f_snowfrac     = 'x'
-    f_snow         = 'x'
+    f_snow         = 'd'
     f_snow_ai      = 'x'
-    f_rain         = 'x'
+    f_rain         = 'd'
     f_rain_ai      = 'x'
     f_sst          = 'd'
     f_sss          = 'd'
