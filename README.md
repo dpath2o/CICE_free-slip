@@ -20,12 +20,13 @@ The central physical problem is that Antarctic landfast sea ice is not simply sl
 - [Free-slip strain-rate expectation](#free-slip-strain-rate-expectation)
 - [Lateral-drag form factors](#lateral-drag-form-factors)
 - [Lateral-drag form functions](#lateral-drag-form-functions)
-- [Corrected `blend_strain` formulation](#corrected-blend_strain-formulation)
+- [`blend_strain` formulation](#blend_strain-formulation)
 - [Strain-rate normalisation](#strain-rate-normalisation)
 - [Diagnostics](#diagnostics)
 - [Namelist parameters](#namelist-parameters)
 - [v1.0 test-configuration experiments](#v10-experiment-configuration)
 - [v2.0 publication experiments](#v20-experiment-publication-experiments)
+- [Ice-strength thickness-exponent tests](#ice-strength-thickness-exponent-tests)
 - [Analysis workflow](#analysis-workflow)
 - [Known limitations](#known-limitations)
 - [Relationship to upstream CICE](#relationship-to-upstream-cice)
@@ -251,7 +252,7 @@ The scalar form function $\phi$ is selected by `form_func`.
 ### `static`
 
 $$
-\phi_{\mathrm{static}} = \frac{\mathrm{C}_\mathrm{s}{|\mathbf{u}|+u_0}.
+\phi_{\mathrm{static}} = \frac{\mathrm{C}_{\mathrm{s}}}{|\mathbf{u}| + u_0}.
 $$
 
 This is the Liu-style reference branch. It produces strong low-speed damping while remaining regularised by $u_0$.
@@ -278,7 +279,7 @@ The corrected `blend_strain` form function blends the static and quadratic branc
 
 ---
 
-## Corrected `blend_strain` formulation
+## `blend_strain` formulation
 
 The corrected `blend_strain` formulation computes:
 
@@ -427,59 +428,107 @@ These experiments are designed to test whether the corrected `blend_strain` form
 
 ---
 
-## v2.0 Experiment Publication Experiments
+## v2.0 publication experiment suite
 
-After revising geometric form-factor construction (see [shuga/docs/lateral_drag.md](https://github.com/dpath2o/mawsons-chest/blob/main/shuga/docs/lateral_drag.md)) here I'll attempt to record the scientific intent of the CICE lateral-drag experiment suite for the GMD publication. The table is ordered from the `no-slip` reference case through to `blend-strain`. All cases/experiments are intended to share the same grid, forcing, timestep, history output, restart configuration, and forcing-data paths. The scientific differences are restricted to the lateral boundary condition, tensile/yield-curve settings, and the lateral-drag form-function parameters.
-
-### Common non-default configuration
-
-The suite uses daily averaged history output and a 30-minute thermodynamic/dynamic timestep:
+The v2.0 experiment suite records the main CICE6 free-slip and lateral-drag simulations used for the publication analysis. Experiment names refer to the archived experiment directories under:
 
 ```text
-use_leap_years = .true.
-dt             = 1800
-npt_unit       = 'm'
-npt            = 1
-diagfreq       = 24
-histfreq       = 'd'
-hist_avg       = .true.
+~/AFIM_archive/<experiment>/
+boundary_condition = 'free_slip'
+lateral_drag       = .true.
+form factors       = coastline + grounded icebergs
+history output     = daily averaged
+dt                 = 1800 s
+ndte               = 360
+kdyn               = 1
 ```
 
-The shared dynamic settings are:
+The main reference `static` form function setting:
+```text
+form_func          = 'static'
+Cs                 = 1.0e-3
+Pstar              = 2.75e4
+Cstar              = 20
+Ktens              = 0.2
+e_yieldcurve       = 1.5
+e_plasticpot       = 1.5
+```
+
+| Order | Experiment              | Family                                       | Key perturbation                                            | Scientific role                                                                                            |
+| ----: | ----------------------- | -------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+|     0 | `no-slip-def`           | Boundary reference                           | `no-slip`; no lateral drag; default rheology                | Traditional CICE lateral-boundary reference.                                                               |
+|     1 | `no-slip-LFI`           | Boundary/rheology reference                  | `no-slip`; no lateral drag; LFI-favourable rheology         | Tests whether rheology alone can promote mechanically persistent ice under no-slip conditions.             |
+|     2 | `Cs-low`                | Static lateral drag                          | `form_func = 'static'`; low `Cs`                            | Low-end static lateral-resistance case.                                                                    |
+|     3 | `Cs-mid`                | Static lateral drag                          | `form_func = 'static'`; intermediate `Cs`                   | Intermediate static lateral-resistance case.                                                               |
+|     4 | `Cs-high`               | Static lateral drag                          | `form_func = 'static'`; `Cs = 1.0e-3`                       | Main strong static-drag case; currently the central free-slip lateral-drag reference.                      |
+|     5 | `Cs-high-def-rhe`       | Static lateral drag + rheology               | `Cs-high` with default rheology                             | Separates the effect of strong static drag from the higher-tensile/high-rheology settings.                 |
+|     6 | `Cs-high-ktens-low`     | Static lateral drag + tensile sensitivity    | `Cs-high` with lower tensile-strength setting               | Tensile-strength sensitivity around the main static-drag case.                                             |
+|     7 | `Cs-high-ktens-mid`     | Static lateral drag + tensile sensitivity    | `Cs-high` with intermediate tensile-strength setting        | Intermediate tensile-strength sensitivity around the main static-drag case.                                |
+|     8 | `Cs-high-eDef`          | Static lateral drag + yield/plastic geometry | `Cs-high` with modified yield/plastic eccentricity settings | Tests sensitivity to the rheological ellipse/flow-rule geometry.                                           |
+|     9 | `Cq-low`                | Quadratic lateral drag                       | `form_func = 'quad'`; low `Cq`                              | Low-end velocity-dependent lateral resistance.                                                             |
+|    10 | `Cq-mid`                | Quadratic lateral drag                       | `form_func = 'quad'`; intermediate `Cq`                     | Intermediate quadratic response.                                                                           |
+|    11 | `Cq-high`               | Quadratic lateral drag                       | `form_func = 'quad'`; high `Cq`                             | Strong velocity-dependent lateral resistance.                                                              |
+|    12 | `Cl-low`                | Linear lateral drag                          | `form_func = 'linear'`; low `C_L`                           | Weak Rayleigh-style lateral-resistance case.                                                               |
+|    13 | `Cl-mid`                | Linear lateral drag                          | `form_func = 'linear'`; intermediate `C_L`                  | Intermediate Rayleigh-style lateral-resistance case.                                                       |
+|    14 | `blend-strain-low`      | `blend_strain` lateral drag                  | Low blend-strain setting                                    | Low-end blend-strain case.                                                                                 |
+|    15 | `blend-strain-mid`      | `blend_strain` lateral drag                  | Intermediate blend-strain setting                           | Intermediate blend-strain case.                                                                            |
+|    16 | `blend-strain-high`     | `blend_strain` lateral drag                  | High blend-strain setting                                   | Stronger blend-strain case.                                                                                |
+|    17 | `cst-drag`              | Geometry sensitivity                         | Coastline-only form-factor contribution                     | Separates coastline anchoring from grounded-iceberg anchoring.                                             |
+|    18 | `GIB-drag`              | Geometry sensitivity                         | Grounded-iceberg-only form-factor contribution              | Separates grounded-iceberg anchoring from coastline anchoring.                                             |
+|    19 | `kstrength-test01`      | Ice-strength sensitivity                     | `kstrength = 2`; `Pstar = 27500 / sqrt(2)`                  | Tests an (h^{3/2}) ice-strength law normalised to match the standard Hibler strength at 2 m ice thickness. |
+|    20 | `kstrength-test02`      | Ice-strength sensitivity                     | `kstrength = 2`; `Pstar = 27500 / sqrt(3)`                  | Tests an (h^{3/2}) ice-strength law normalised to match the standard Hibler strength at 3 m ice thickness. |
+|    21 | `Cs-high-roth-def`      | Ice-strength/rheology sensitivity            | `Cs-high`; Rothrock strength; default rheology              | Separates Rothrock ice strength from the default-rheology static-drag case.                                |
+|    22 | `Cs-high-roth-rhe-high` | Ice-strength/rheology sensitivity            | `Cs-high`; Rothrock strength; high-rheology settings        | Tests Rothrock strength under the high-rheology static-drag configuration.                                 |
+
+The `static`, `quadratic`, `linear`, and `blend-strain` cases test the form-function dependence of the lateral-drag parameterisation. The `cst-drag` and `GIB-drag` cases test the geometric origin of the lateral-drag form factors. The `kstrength` and *Rothrock* cases test whether the simulated fast-ice strength/thickness behaviour is controlled by the ice-strength formulation rather than by lateral drag alone.
+
+---
+
+## Ice-strength thickness-exponent tests
+
+The `kstrength-test01` and `kstrength-test02` experiments test a new Icepack/CICE ice-strength option:
+
+$$
+P = P^\ast h^{3/2} \exp[-C(1-A)].
+$$
+
+This is implemented as `kstrength = 2`. The tests are based on the `Cs-high` static lateral-drag configuration:
 
 ```text
-ndte          = 360
-kdyn          = 1
-kstrength     = 0
+boundary_condition = 'free_slip'
+lateral_drag       = .true.
+form factors       = coastline + grounded icebergs
+form_func          = 'static'
+Cs                 = 1.0e-3
+Ktens              = 0.2
+e_yieldcurve       = 1.5
+e_plasticpot       = 1.5
+Cstar              = 20
 ```
 
-Unless otherwise specified, the `free-slip` lateral-drag sensitivity cases use (most likely!!):
+Two normalisations are:
+| Experiment         | `kstrength` |  `Pstar` | Matching thickness | Role                                                                                                     |
+|--------------------|------------:|---------:|-------------------:|----------------------------------------------------------------------------------------------------------|
+| `kstrength-test01` |           2 | 19445.44 |                2 m | Conservative ($h^{3/2}$) test, close to standard Hibler strength near typical compact sea-ice thickness. |
+| `kstrength-test02` |           2 | 15877.13 |                3 m | Weaker normalisation for 1--2 m ice; tests sensitivity to the chosen matching thickness.                 |
 
-```text
-Ktens         = 0.05
-e_yieldcurve  = 1.5
-e_plasticpot  = 1.5
-```
+The ratio of the new ice strength to the standard linear-thickness Hibler strength is:
 
-### Experiment progression
+$$
+\frac{\matrhm{P}_{\mathrm{new}}}{\matrhm{P}_{\mathrm{old}}} = \sqrt{\frac{\mathrm{hi}{\mathrm{hi}_{\mathrm{match}}}}
+$$
 
-| Order | Sub-directory | Experiment (Punlication) Name | Scientific/Code change | Scientific role in the paper |
-|---:|---|---|---|---|
-| 0 | `no-slip-def` | `no-slip-def` | `no-slip` BC; no lateral drag. | Reference configuration for the *traditional* lateral boundary treatment. Separates effect of `free-slip` BC (and lateral-drag framework/scheme/closure) from the *traditional* `no-slip` CICE configuration. Good comparison to `free-slip-def`. |
-| 0 | `no-slip-LFI` | `no-slip-LFI` | `no-slip` BC; no lateral drag; `Ktens = 0.2`, `e_yieldcurve = 1.2`, `e_plasticpot = 1.2` | Rheology favours LFI. Tests whether tensile strength and a less elongated yield-curve (normal flow rule) geometry can increase LFI (more precisely: mechanically persistent ice) without invoking `free-slip` lateral drag. Good comparative to `free-slip-LFI` |
-| 1 | `free-slip01` | `free-slip-def` | `free-slip` BC; no lateral drag; `Ktens = 0.0`, `e_yieldcurve = 2.0`, `e_plasticpot = 2.0`. | Boundary-condition baseline. Isolates effect of replacing `no-slip` BC with `free-slip` BC before adding either tensile-strength/yield-curve changes or lateral drag closure. Good comparative to `no-slip-def`. |
-| 2 | `free-slip02` | `free-slip-LFI` | `free-slip` BC; no lateral drag; `Ktens = 0.2`, `e_yieldcurve = 1.2`, `e_plasticpot = 1.2`. | Rheology favours LFI. Tests whether tensile strength and a less elongated yield-curve (normal flow rule) geometry can increase LFI without invoking lateral drag. |
-| 3 | `free-slip03` | `free-slip-ktens-low` | `free-slip` BC; no lateral drag; `Ktens = 0.05`, `e_yieldcurve = 1.5`, `e_plasticpot = 1.5`. | Rheology *traditionally* less favourable for LFI. **May not be carried out once first year results are in for `Cs-high` experiment below**|
-| 4 | `free-slip04` | `Cs-low` | `form_func = 'static'`, `Cs = 1.0e-4`. | Tests the low-end of a speed-independent resisting-stress contribution over the relevant fast-ice speed range. Liu et. al (2022) used value.|
-| 5 | `free-slip05` | `Cs-mid` | `form_func = 'static'`, `Cs = 5.0e-4`. | Evaluates a moderate speed-independent lateral resisting stress can improve FIA.|
-| 6 | `free-slip` | `Cs-high`| `form_func = 'static'`, `Cs = 1.0e-3`. | Provides upper end of the `static` coefficient sweep, acts as a *strong* speed-independent lateral resisting-stress case. Factor of 10 greater than Liu et. al (2022)|
-| 7 | `free-slip06` | `Cq-low` | `form_func = 'quad'`, `Cq = 1.0`. | Tests the low end of a drag law whose resisting stress is small at low speed and increases rapidly with ice speed. Liu et. al (2022) used value.|
-| 8 | `free-slip07` | `Cq-mid` | `form_func = 'quad'`, `Cq = 75.0`. | Tests a moderate quadratic response and provides contrast with the intermediate static branch. |
-| 9 | `free-slip08` | `Cq-high` | `form_func = 'quad'`, `Cq = 350.0`. | Tests whether a large quadratic coefficient can provide sufficient resisting stress near the low-speed fast-ice classification threshold while retaining stronger sensitivity at higher speeds. |
-| 10 | `free-slip09` | `Cl-low` | `form_func = 'linear'`, `C_L = 0.10`. | Provides a weak linear reference between the approximately speed-independent static branch and the speed-squared quadratic branch. |
-| 11 | `free-slip10` | `Cl-mid` | `form_func = 'linear'`, `C_L = 0.25`. | Tests whether a simple linear stress scaling provides a useful balance between low-speed resistance and higher-speed response. |
-| 12 | `free-slip11` | `Cl-high` | `form_func = 'linear'`, `C_L = 0.50`. | Provides the *strong* end of the linear sweep and a direct comparison against the strongest static and quadratic cases. |
-| 13 | `free-slip12` | `blend-strain` | `form_func = 'blend_strain'`, `Cs = 5.0e-4`, `Cq = 75.0`, `u_blend = 5.0e-4`, `eps_blend = 5.0e-8`, `blend_exp = 3`. | Tests whether using both ice speed and resolved deformation provide a more physically selective lateral-drag response than *speed-only* static, linear, or quadratic branches. |
+This makes the the 3 metre-normalised case systematically weaker than the 2 metre-normalised case for 1--2 m ice.
+
+### September--November 2005 pilot comparison
+
+The 90-day simulation starts from the 1 Sep 2005 restart and uses daily history output. Southern Ocean ice-mask-mean strength separates quickly between the two normalisations, while the bulk ice-area and extent diagnostics remain comparatively close over this short pilot window.
+
+[Southern Ocean ice-mask-mean strength for the two kstrength pilot tests](figs/kstrength/metric_strength_mean_ice_mask.png)
+
+A 30-day October map animation compares ice strength and sea-ice thickness over the Mawson Coast to Shackleton Ice Shelf sector:
+
+[Download or view the October 2005 strength/thickness MP4](figs/kstrength/kstrength_strength_hi_200510.mp4)
 
 ---
 

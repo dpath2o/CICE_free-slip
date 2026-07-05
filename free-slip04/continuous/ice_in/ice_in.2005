@@ -169,7 +169,7 @@
     brlx                 = 300.0
     arlx                 = 300.0
     advection            = 'remap'
-    kstrength            = 0
+    kstrength            = 1
     krdg_partic          = 1
     krdg_redist          = 1
     mu_rdg               = 3
@@ -193,7 +193,7 @@
     boundary_condition   = 'free_slip'
     lateral_drag         = .true.
     form_func            = 'static'
-    Cs                   = 5.0e-4
+    Cs                   = 1.0e-3
     Cq                   = 0.0
     C_L                  = 0.0
     eps_blend            = 0.0
