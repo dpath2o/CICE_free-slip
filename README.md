@@ -515,7 +515,7 @@ Two normalisations are:
 The ratio of the new ice strength to the standard linear-thickness Hibler strength is:
 
 $$
-\frac{\matrhm{P}_{\mathrm{new}}}{\matrhm{P}_{\mathrm{old}}} = \sqrt{\frac{\mathrm{hi}{\mathrm{hi}_{\mathrm{match}}}}
+\frac{\matrhm{P}_{\mathrm{new}}}{\matrhm{P}_{\mathrm{old}}} = \sqrt{\frac{\mathrm{hi}{\mathrm{hi}_{\mathrm{match}}}}}
 $$
 
 This makes the the 3 metre-normalised case systematically weaker than the 2 metre-normalised case for 1--2 m ice.
