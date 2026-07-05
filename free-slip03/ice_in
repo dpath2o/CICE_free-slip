@@ -8,7 +8,7 @@
     istep0               = 0
     dt                   = 1800.0
     npt_unit             = 'm'
-    npt                  = 2
+    npt                  = 7
     ndtd                 = 1
     runtype              = 'continue'
     ice_ic               = 'none'
@@ -167,14 +167,14 @@
     brlx                 = 300.0
     arlx                 = 300.0
     advection            = 'remap'
-    kstrength            = 0
+    kstrength            = 1
     krdg_partic          = 1
     krdg_redist          = 1
     mu_rdg               = 3
     Pstar                = 2.75e4
     Cstar                = 20
     Cf                   = 17.
-    Ktens                = 0.2
+    Ktens                = 0
     e_yieldcurve         = 2.0
     e_plasticpot         = 2.0
     visc_method          = 'avg_zeta'

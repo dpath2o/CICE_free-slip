@@ -2324,10 +2324,19 @@
             write(nu_diag,1020) ' krdg_redist      = ', krdg_redist,trim(tmpstr2)
          endif
 
+         ! if (kstrength == 0) then
+         !    tmpstr2 = ' : Hibler (1979)'
+         ! elseif (kstrength == 1) then
+         !    tmpstr2 = ' : Rothrock (1975)'
+         ! else
+         !    tmpstr2 = ' : unknown value'
+         ! endif
          if (kstrength == 0) then
             tmpstr2 = ' : Hibler (1979)'
          elseif (kstrength == 1) then
             tmpstr2 = ' : Rothrock (1975)'
+         elseif (kstrength == 2) then
+            tmpstr2 = ' : Hibler-style h**1.5 test'
          else
             tmpstr2 = ' : unknown value'
          endif

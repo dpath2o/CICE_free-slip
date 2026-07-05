@@ -8,12 +8,12 @@
     istep0               = 0
     dt                   = 1800.0
     npt_unit             = 'm'
-    npt                  = 12
+    npt                  = 2
     ndtd                 = 1
-    runtype              = 'initial'
+    runtype              = 'continue'
     ice_ic               = 'none'
     restart_ext          = .false.
-    use_restart_time     = .false.
+    use_restart_time     = .true.
     restart_format       = 'default'
     restart_rearranger   = 'default'
     restart_iotasks      = -99
@@ -167,7 +167,7 @@
     brlx                 = 300.0
     arlx                 = 300.0
     advection            = 'remap'
-    kstrength            = 0
+    kstrength            = 1
     krdg_partic          = 1
     krdg_redist          = 1
     mu_rdg               = 3
@@ -191,7 +191,7 @@
     boundary_condition   = 'free_slip'
     lateral_drag         = .true.
     form_func            = 'static'
-    Cs                   = 5.0e-4
+    Cs                   = 1.0e-3
     Cq                   = 0.0
     C_L                  = 0.0
     eps_blend            = 0.0

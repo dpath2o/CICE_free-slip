@@ -8,7 +8,7 @@
     istep0               = 0
     dt                   = 1800.0
     npt_unit             = 'm'
-    npt                  = 12
+    npt                  = 2
     ndtd                 = 1
     runtype              = 'continue'
     ice_ic               = 'none'
@@ -174,9 +174,9 @@
     Pstar                = 2.75e4
     Cstar                = 20
     Cf                   = 17.
-    Ktens                = 0.2
-    e_yieldcurve         = 1.5
-    e_plasticpot         = 1.5
+    Ktens                = 0.0
+    e_yieldcurve         = 2.0
+    e_plasticpot         = 2.0
     visc_method          = 'avg_zeta'
     elasticDamp          = 0.09d0
     deltaminEVP          = 1e-11
