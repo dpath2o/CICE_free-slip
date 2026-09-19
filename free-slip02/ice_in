@@ -161,7 +161,7 @@
 
 &dynamics_nml
     kdyn                 = 1
-    ndte                 = 360
+    ndte                 = 720
     revised_evp          = .false.
     evp_algorithm        = 'standard_2d'
     brlx                 = 300.0

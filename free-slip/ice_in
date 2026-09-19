@@ -161,17 +161,17 @@
 
 &dynamics_nml
     kdyn                 = 1
-    ndte                 = 360
+    ndte                 = 420
     revised_evp          = .false.
     evp_algorithm        = 'standard_2d'
     brlx                 = 300.0
     arlx                 = 300.0
     advection            = 'remap'
-    kstrength            = 2
+    kstrength            = 0
     krdg_partic          = 1
     krdg_redist          = 1
     mu_rdg               = 3
-    Pstar                = 19445.44
+    Pstar                = 2.75e4
     Cstar                = 20
     Cf                   = 17.
     Ktens                = 0.2
@@ -308,7 +308,7 @@
     atm_data_type   = 'ERA5'
     atm_data_version = '_undef'
     ocn_data_type   = 'AFIM'
-    hmix_0          = 60
+    hmix_0          = 20
     bgc_data_type   = 'default'
     fe_data_type    = 'default'
     ice_data_type   = 'uniform'

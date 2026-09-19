@@ -11,11 +11,9 @@
     npt                  = 12
     ndtd                 = 1
     runtype              = 'continue'
-
     ice_ic               = 'none'
     restart_ext          = .false.
     use_restart_time     = .true.
-
     restart_format       = 'default'
     restart_rearranger   = 'default'
     restart_iotasks      = -99
@@ -163,7 +161,7 @@
 
 &dynamics_nml
     kdyn                 = 1
-    ndte                 = 360
+    ndte                 = 720
     revised_evp          = .false.
     evp_algorithm        = 'standard_2d'
     brlx                 = 300.0
@@ -176,7 +174,7 @@
     Pstar                = 2.75e4
     Cstar                = 20
     Cf                   = 17.
-    Ktens                = 0.1
+    Ktens                = 0.2
     e_yieldcurve         = 1.5
     e_plasticpot         = 1.5
     visc_method          = 'avg_zeta'
@@ -310,7 +308,7 @@
     atm_data_type   = 'ERA5'
     atm_data_version = '_undef'
     ocn_data_type   = 'AFIM'
-    hmix_0          = 60
+    hmix_0          = 20
     bgc_data_type   = 'default'
     fe_data_type    = 'default'
     ice_data_type   = 'uniform'
