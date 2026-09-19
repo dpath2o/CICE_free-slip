@@ -2174,7 +2174,7 @@
                if (grid_ice == 'C' .or. grid_ice == 'CD') then
                   write(nu_diag,1030) ' boundary_condition = ', trim(boundary_condition),' : horizontal boundary condition'
                endif
-               if (grid_ice == 'C' .or. grid_ice == 'CD' .and. lateral_drag) then
+               if (grid_ice == 'C' .and. lateral_drag) then
                   write(nu_diag,1030) ' form_func = ', trim(form_func)
                endif
                if (revised_evp) then
