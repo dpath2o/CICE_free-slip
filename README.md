@@ -1,10 +1,14 @@
-# CICE free-slip and lateral-drag development branch
+# CICE free-slip and lateral-drag
 
-**Version:** v1.0 
-**Status:** research-development branch for CICE6 free-slip boundary conditions and lateral-drag parameterisation
+**Version:** v1.0  
+**Status:** versioned research release for CICE6 free-slip boundary conditions and lateral-drag parameterisation  
+**Stable branch:** `main` (v1.0 reference)  
+**Development branch:** `develop`
 **Primary application:** Antarctic landfast sea-ice process experiments
 
 This repository develops and evaluates a free-slip coastal boundary condition and explicit lateral-drag parameterisations for representing Antarctic landfast sea ice in CICE.
+
+`main` is retained as the stable v1.0 reference state. Ongoing source development should occur on `develop` or short-lived feature branches and be merged to `main` only as part of a deliberate versioned release.
 
 The central physical problem is that Antarctic landfast sea ice is not simply slow pack ice. It forms where coastal geometry, ice shelves, islands, grounded icebergs, internal ice stress, and local deformation interact to immobilise otherwise mobile sea ice. This branch tests whether high-resolution coastline and grounded-iceberg form factors can provide geometric anchoring in CICE without relying on a no-slip boundary condition that directly suppresses coastal ice motion.
 
