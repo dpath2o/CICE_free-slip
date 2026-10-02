@@ -1,0 +1,71 @@
+< [33m83e560f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/free-slip[m[33m, [m[1;31mfree/main[m[33m)[m non-compile sync of code; mainly with notebooks
+< [33me26a044[m documentation
+< [33m09b4497[m documentation
+< [33me19e13c[m documentation
+< [33mc9891c5[m documentation
+< [33md09ecca[m documentation
+< [33md4e41ba[m kstrength = 2 implementation (see docs for further info)
+< [33m2cbaa37[m new experiment settings
+< [33ma86b568[m minor case updates/organisation
+< [33ma901d5d[m intermediate
+< [33mb2705b3[m new analysis
+< [33m8133631[m minor additions to notebooks
+< [33m4345d1c[m added relevant notebooks
+< [33m3bd547e[m[33m ([m[1;33mtag: [m[1;33mv1.0[m[33m)[m docs: prepare CICE_free-slip v1.0 README
+< [33m3d91554[m full blend-strain working version
+< [33m7b78e9b[m diagnostics now added for blend-strain form function
+< [33m6a7776a[m cleaned up extraneous/irrelevant form function switches and various coefficients
+< [33m735d5e4[m added new form functions 'quad-sat', 'blend-vel', and 'blend-strain'
+< [33m3cf8a65[m add continuous run capability
+< [33m009b61c[m more revisions to cice.run
+< [33mb58d7b3[m more revisions to cice startup
+< [33m79fc1a1[m revised submit_and_archive.csh
+< [33m9194ebd[m revised submit_and_archive.csh
+< [33ma4a23b3[m add new cases and submit_and_archive.csh
+< [33m83445bc[m ran new LD cases
+< [33mcf87e18[m lateral drag test cases
+< [33m9b97aa8[m ensured lateral drag coefficients are initialised irrespective of grid choice
+< [33m3dc1c24[m some minor comments added
+< [33mcae646b[m trestore now inline with rest of CICE standalone forcing and producing reasonable global standalone sea ice
+< [33m544a1d9[m more ice_forcing.F90 testing
+<   [33m78d45e4[m merged to most recent updates
+[32m|[m[33m\[m  
+[32m|[m < [33mc27ea5f[m still not working
+[32m|[m < [33m82052d7[m[33m ([m[1;32mlater-drag-not-working[m[33m)[m failing model
+[32m|[m < [33mebded40[m minor updates
+[32m|[m < [33m9d5b1c0[m minor change
+[32m|[m < [33m36765fb[m significant changes to ice_forcing.F90 after finding error to previous version
+< [33m|[m [33m2bdcd0c[m minor changes
+[33m|[m[33m/[m  
+< [33m5f2fd40[m changed mixed layer depth
+< [33mb1e6dc2[m lateral drag implementation
+< [33mbb9de3e[m revised build_F2_form_factor subroutine for reading-in form factors (F2-type) from a netcdf
+< [33m50f1eed[m extended free-slip v no-slip 'runs'
+< [33me10b9ba[m extended runs
+< [33m54dcc95[m added capability of running experiments in standalone mode
+< [33m6855df4[m added notes
+< [33m7632099[m added notes
+< [33m4f6eb2a[m minor updates to comments in EVP and shared and grid
+< [33m7a0d260[m CDP testing
+< [33mca6388c[m CDP testing
+< [33m6c4c548[m CDP testing
+< [33m03e861d[m CDP testing
+< [33m5fb075f[m CDP testing
+< [33m49df23b[m CDP testing
+< [33m0d482aa[m testing CDP commit
+< [33m791189f[m another attempt to get CDP working: slight modification to subroutine alloc_flux in ice_flux.F90
+< [33m861064b[m pursuing CDP implementation: ice_grid.F90 updates
+< [33mc54025d[m minor change to ice_in
+< [33m489360b[m CDP history outputs / diagnostic fields
+< [33mc4d590f[m new NetCDF analysis comparison for runs that should be equivalent
+< [33m6ab9fd8[m un-commented 'Cl' in 'stepu_C' and
+< [33m7254c99[m commented out 'Cl' in stepu_C and stepv_C to test bytewise with preCDP
+< [33m2bd6ac4[m add NetCDF file difference/equivalency script (checker)
+< [33md195546[m add NetCDF file difference/equivalency script (checker)
+< [33mbc3c0a7[m added coastal drag parameterisation scheme
+< [33me05f7b8[m test
+< [33m5891c62[m intermediary commit
+< [33me43c680[m removed distance ratio free-slip sub-routine
+< [33m9adab27[m added new free-slip subroutine without d[x|y][E|N] ratios
+< [33ma6ec3d9[m added new free-slip subroutine without d[x|y][E|N] ratios
+< [33m38218a8[m adding new subroutine strain_rates_U_free_slip
