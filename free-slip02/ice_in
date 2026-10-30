@@ -10,10 +10,10 @@
     npt_unit             = 'm'
     npt                  = 12
     ndtd                 = 1
-    runtype              = 'continue'
+    runtype              = 'initial'
     ice_ic               = 'none'
     restart_ext          = .false.
-    use_restart_time     = .true.
+    use_restart_time     = .false.
     restart_format       = 'default'
     restart_rearranger   = 'default'
     restart_iotasks      = -99
@@ -161,7 +161,7 @@
 
 &dynamics_nml
     kdyn                 = 1
-    ndte                 = 720
+    ndte                 = 360
     revised_evp          = .false.
     evp_algorithm        = 'standard_2d'
     brlx                 = 300.0
@@ -174,9 +174,9 @@
     Pstar                = 2.75e4
     Cstar                = 20
     Cf                   = 17.
-    Ktens                = 0.0
-    e_yieldcurve         = 2.0
-    e_plasticpot         = 2.0
+    Ktens                = 0.2
+    e_yieldcurve         = 1.5
+    e_plasticpot         = 1.5
     visc_method          = 'avg_zeta'
     elasticDamp          = 0.09d0
     deltaminEVP          = 1e-11
@@ -188,8 +188,8 @@
     k2                   = 15.
     alphab               = 20.
     threshold_hw         = 30.
-    boundary_condition   = 'free_slip'
-    lateral_drag         = .true.
+    boundary_condition   = 'no_slip'
+    lateral_drag         = .false.
     form_func            = 'static'
     Cs                   = 1.0e-3
     Cq                   = 0.0
