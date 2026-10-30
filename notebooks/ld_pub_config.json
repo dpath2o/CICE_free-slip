@@ -1,0 +1,26 @@
+{
+  "experiment_group": "lateral-drag",
+  "project": "gv90",
+  "user": "da1339",
+  "model_start": "2000-01-01",
+  "model_end": "2005-12-31",
+  "evaluation_start": "2000-04-01",
+  "evaluation_end": "2005-04-30",
+  "evaluation_note": "April 2000 through April 2005 inclusive; regenerate older panels ending December 2005.",
+  "afim_output_root": "/g/data/gv90/da1339/afim_output",
+  "graphics_root": "/g/data/gv90/da1339/GRAPHICAL",
+  "obs_fia_path": "/g/data/gv90/da1339/SeaIce/FI_obs/AF-FI-2020db_FIA_from_original_dataset.zarr",
+  "method": "binary-days",
+  "grid_type": "Tc",
+  "ispd_thresh": 0.0005,
+  "aice_thresh": 0.15,
+  "bin_window": 11,
+  "bin_min_days": 9,
+  "roll_window": 15,
+  "new_cases": {
+    "free-slip": "free-slip-no-drag",
+    "free-slip01": "Cs-high-ktens-zero",
+    "free-slip02": "no-slip-LFI-match"
+  },
+  "shuga_minimum_group_layout_commit": "caae0c0768414be30f196754e9d8b57621b7e154"
+}
