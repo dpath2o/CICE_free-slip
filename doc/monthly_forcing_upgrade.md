@@ -116,6 +116,7 @@ module load conda/analysis3-26.02
 python scripts/compare_monthly_forcing_check.py \
   --history /g/data/gv90/da1339/cice-dirs/runs/forcing-monthly-check/history \
   --reference ~/AFIM_archive/lateral-drag/Cs-high/zarr/iceh_daily.zarr \
+  --reference-time-shift-hours 24 \
   --output forcing-check-report-2003-09
 ```
 
@@ -136,10 +137,17 @@ The default numerical criterion is `abs(new-old) <= 1e-8 + 1e-6*abs(old)`;
 these are configurable screening thresholds, not validated scientific
 acceptance limits. Units, dimensions, indexed coordinates and all 30 daily
 end-labelled timestamps must match exactly. Missing days, duplicates,
-infinities, mismatched NaN masks or missing fields cannot pass. If shuga
-changed the archive timestamp convention, establish that from its metadata
-and then supply `--reference-time-shift-hours` explicitly. Never shift dates
-merely to obtain agreement. No spatial interpolation is performed; confirm
+infinities, mismatched NaN masks or missing fields cannot pass. For archives written by shuga's daily `NC2Zarr` converter, use
+`--reference-time-shift-hours 24`, as in the command above. Its
+[conversion code](https://github.com/dpath2o/shuga/blob/main/core/data_conversion.py#L538)
+subtracts one day from daily NetCDF timestamps before writing Zarr. A NetCDF
+mean ending September 2 00Z is therefore labelled September 1 00Z in that
+archive. Adding 24 hours to reference coordinates restores end-labelled
+alignment; values are unchanged. With zero shift, equal timestamps compare
+adjacent daily intervals and can produce large wind, current and ice-state
+differences. The script defaults to zero for general archives; verify the
+conversion convention when using a different reference. A shifted comparison
+must still pass the original tolerances. Never shift dates merely to obtain agreement. No spatial interpolation is performed; confirm
 that both products use the same grid and masks.
 
 A bitwise match is not promised: the monthly ERA5 files were reprocessed,
