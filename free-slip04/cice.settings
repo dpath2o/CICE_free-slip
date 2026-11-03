@@ -7,7 +7,7 @@ setenv ICE_ENVNAME  intel
 setenv ICE_MACHCOMP  gadi1_intel  
 setenv ICE_SCRIPTS  /home/581/da1339/AFIM/src/CICE_free-slip/configuration/scripts  
 setenv ICE_CASEDIR  /home/581/da1339/AFIM/src/CICE_free-slip/free-slip04  
-setenv ICE_RUNDIR  /g/data/gv90/da1339/cice-dirs/runs/free-slip04  
+setenv ICE_RUNDIR  /g/data/gv90/da1339/cice-dirs/runs/Cs-high-mnthly-frcg  
 setenv ICE_OBJDIR     ${ICE_RUNDIR}/compile
 setenv ICE_RSTDIR     ${ICE_RUNDIR}/restart
 setenv ICE_HSTDIR     ${ICE_RUNDIR}/history
