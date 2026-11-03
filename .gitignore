@@ -7,6 +7,7 @@ doc/build
 
 # fortran config
 ice_in
+!forcing-monthly-check/ice_in
 
 # Ignore testsuite file/directories
 testsuite*

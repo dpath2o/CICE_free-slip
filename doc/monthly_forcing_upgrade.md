@@ -67,11 +67,29 @@ cd forcing-monthly-check
 qsub cice.run
 ```
 
+If you pulled the initial upgrade and this case has no `ice_in`, the file
+was omitted from that commit because of the repository's `ice_in` ignore rule.
+It is now explicitly tracked. From the repository root, retrieve just the
+missing file without merging or changing your other local edits:
+
+```bash
+git fetch free develop
+git restore --source=FETCH_HEAD -- forcing-monthly-check/ice_in
+ls -l forcing-monthly-check/ice_in
+```
+
+This restores the prepared 30-day Cs-high namelist. If you have since created
+or edited that file, save your version before restoring it. **An existing
+successful build does not need to be repeated for this namelist-only repair.**
+The namelist reads the 2003 restart directly from its archive path; a copied
+restart under the run directory is not required.
+
 `qsub cice.run.continuous` is an equivalent single-job launch here.
 `./cice.continuous` also submits just this 30-day job; it rejects annual-chain
 options. Do not submit both launch scripts for the same run.
 
-The preflight checks restart metadata, September ERA5 records/variables,
+The preflight first requires a nonempty case `ice_in`, then checks restart
+metadata, September ERA5 records/variables,
 October ERA5 availability and annual ORAS variables/records. CICE samples
 forcing at the end of each timestep, so the final step needs October 1 forcing.
 It does not establish that the monthly reprocessed data equal the old inputs.

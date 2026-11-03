@@ -32,6 +32,10 @@ source ./env.${ICE_MACHCOMP} || exit 2
 if ( ! $?ICE_IN_SRC ) then
   setenv ICE_IN_SRC "${ICE_CASEDIR}/ice_in"
 endif
+if ( ! -s "${ICE_IN_SRC}" ) then
+  echo "ERROR: Missing or empty ${ICE_IN_SRC}"
+  exit 2
+endif
 
 echo " "
 echo "${0}:"
@@ -43,7 +47,7 @@ set ICE_RUNLOG_FILE = "cice.runlog.${stamp}"
 cd ${ICE_RUNDIR} || exit 4
 
 # Copy inputs into run dir (NOTE: ice_in comes from ICE_IN_SRC)
-cp -f "${ICE_IN_SRC}"                 "${ICE_RUNDIR}/ice_in"
+cp -f "${ICE_IN_SRC}"                 "${ICE_RUNDIR}/ice_in" || exit 3
 cp -f "${ICE_CASEDIR}/env.${ICE_MACHCOMP}" "${ICE_RUNDIR}"
 cp -f "${ICE_CASEDIR}/cice.settings"  "${ICE_RUNDIR}"
 

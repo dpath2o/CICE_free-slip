@@ -20,6 +20,13 @@ def set_nml(text, key, value):
     return text
 
 
+def require_case_namelist(case):
+    path = case / 'ice_in'
+    if not path.is_file() or path.stat().st_size == 0:
+        raise FileNotFoundError(f'Missing or empty case namelist: {path}. '
+                                'Restore forcing-monthly-check/ice_in from develop before submitting.')
+
+
 def check_inputs(restart, atm, ocn):
     import xarray as xr
     with xr.open_dataset(restart, decode_times=False) as ds:
@@ -59,6 +66,7 @@ def main():
     rundir = a.run_root.resolve() / a.case
     restart = a.restart.expanduser().resolve()
     if a.check_only:
+        require_case_namelist(case)
         check_inputs(restart, a.atm_dir, a.ocn_dir)
         print('Restart date and forcing file checks passed')
         return
@@ -91,6 +99,18 @@ def main():
         t = (case / name).read_text()
         t = t.replace('/home/581/da1339/AFIM/src/CICE_free-slip/free-slip', str(case))
         t = re.sub(r'(?m)^#PBS -N .*$', f'#PBS -N {a.case}', t)
+        if name == 'cice.run':
+            guard = '\nif ( ! -s "${ICE_CASEDIR}/ice_in" ) then\n' \
+                    '  echo "ERROR: Missing or empty ${ICE_CASEDIR}/ice_in"\n  exit 2\nendif\n'
+            t = t.replace('source ./cice.settings || exit 2', 'source ./cice.settings || exit 2' + guard)
+            t = t.replace('cp -f ${ICE_CASEDIR}/ice_in ${ICE_RUNDIR}',
+                          'cp -f ${ICE_CASEDIR}/ice_in ${ICE_RUNDIR} || exit 3')
+        else:
+            marker = '  setenv ICE_IN_SRC "${ICE_CASEDIR}/ice_in"\nendif'
+            guard = '\nif ( ! -s "${ICE_IN_SRC}" ) then\n' \
+                    '  echo "ERROR: Missing or empty ${ICE_IN_SRC}"\n  exit 2\nendif\n'
+            t = t.replace(marker, marker + guard)
+            t = t.replace('"${ICE_RUNDIR}/ice_in"', '"${ICE_RUNDIR}/ice_in" || exit 3')
         (case / name).write_text(t)
     nml = (ROOT / 'tests/forcing_monthly/ice_in.Cs-high').read_text()
     for key, value in {'year_init': '2003', 'month_init': '9', 'day_init': '1',

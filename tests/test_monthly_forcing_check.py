@@ -91,6 +91,22 @@ def test_restart_metadata_checked_before_forcing_access(tmp_path):
         setup.check_inputs(path, tmp_path, tmp_path)
 
 
+@pytest.mark.parametrize('empty', [False, True])
+def test_preflight_rejects_missing_or_empty_case_namelist(tmp_path, empty):
+    if empty:
+        (tmp_path / 'ice_in').touch()
+    with pytest.raises(FileNotFoundError, match='case namelist'):
+        setup.require_case_namelist(tmp_path)
+
+
+def test_case_namelist_is_in_git_distribution():
+    # Local-file existence alone missed the original ignored-file omission.
+    result = subprocess.run(['git', 'ls-files', '--error-unmatch',
+                             'forcing-monthly-check/ice_in'], cwd=ROOT, capture_output=True)
+    assert result.returncode == 0, 'The test case ice_in must be committed, not merely present locally'
+    setup.require_case_namelist(ROOT / 'forcing-monthly-check')
+
+
 def test_test_case_preserves_cs_high_physics():
     import re
     def nml(path):

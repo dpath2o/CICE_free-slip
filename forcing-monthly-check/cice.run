@@ -21,6 +21,10 @@ module load netcdf/4.9.2
 source /etc/profile.d/modules.csh
 cd /home/581/da1339/AFIM/src/CICE_free-slip/forcing-monthly-check
 source ./cice.settings || exit 2
+if ( ! -s "${ICE_CASEDIR}/ice_in" ) then
+  echo "ERROR: Missing or empty ${ICE_CASEDIR}/ice_in"
+  exit 2
+endif
 source ./env.${ICE_MACHCOMP} || exit 2
 
 echo " "
@@ -35,7 +39,7 @@ cd ${ICE_RUNDIR}
 
 setenv OMP_NUM_THREADS ${ICE_NTHRDS}
 setenv OMP_SCHEDULE "${ICE_OMPSCHED}"
-cp -f ${ICE_CASEDIR}/ice_in ${ICE_RUNDIR}
+cp -f ${ICE_CASEDIR}/ice_in ${ICE_RUNDIR} || exit 3
 cp -f ${ICE_CASEDIR}/env.gadi1_intel ${ICE_RUNDIR}
 cp -f ${ICE_CASEDIR}/cice.settings ${ICE_RUNDIR}
 set diagtype = `grep -i diag_type ${ICE_CASEDIR}/ice_in | grep -i stdout | wc -l`
