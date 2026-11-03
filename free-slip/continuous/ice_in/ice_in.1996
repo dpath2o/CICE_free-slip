@@ -161,7 +161,7 @@
 
 &dynamics_nml
     kdyn                 = 1
-    ndte                 = 720
+    ndte                 = 360
     revised_evp          = .false.
     evp_algorithm        = 'standard_2d'
     brlx                 = 300.0
@@ -189,7 +189,7 @@
     alphab               = 20.
     threshold_hw         = 30.
     boundary_condition   = 'free_slip'
-    lateral_drag         = .true.
+    lateral_drag         = .false.
     form_func            = 'static'
     Cs                   = 1.0e-3
     Cq                   = 0.0
@@ -308,7 +308,7 @@
     atm_data_type   = 'ERA5'
     atm_data_version = '_undef'
     ocn_data_type   = 'AFIM'
-    hmix_0          = 20
+    hmix_0          = 60
     bgc_data_type   = 'default'
     fe_data_type    = 'default'
     ice_data_type   = 'uniform'

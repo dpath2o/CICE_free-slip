@@ -1,2 +1,7 @@
 Tue Nov  3 23:10:42 AEDT 2026 ./cice.setup --case /home/581/da1339/AFIM/src/CICE_free-slip/forcing-monthly-check --mach gadi1 --env intel --grid gbox12 --pes 1232x1x20x20x10 --acct jk72 --queue normalbw --ignore-user-set
 Tue Nov  3 23:10:42 AEDT 2026 ./cice.setup adding namelist modes set_nml.gbox12
+Tue Nov  3 23:44:58 AEDT 2026 ./cice.build:forcing-monthly-check build completed cice.bldlog.261103-234245
+Wed Nov  4 00:22:28 AEDT 2026 ./cice.submit: forcing-monthly-check job submitted
+Wed Nov  4 00:43:07 AEDT 2026 /local/spool/pbs/mom_priv/jobs/183053738.gadi-pbs.SC: CICE output file is /home/581/da1339/AFIM/src/CICE_free-slip/forcing-monthly-check/logs/cice.runlog.261104-002331
+Wed Nov  4 00:43:07 AEDT 2026 /local/spool/pbs/mom_priv/jobs/183053738.gadi-pbs.SC: CICE output file is /home/581/da1339/AFIM/src/CICE_free-slip/forcing-monthly-check/logs/ice_diag.d
+Wed Nov  4 00:43:07 AEDT 2026 /local/spool/pbs/mom_priv/jobs/183053738.gadi-pbs.SC: CICE run completed successfully

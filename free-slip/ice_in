@@ -10,10 +10,10 @@
     npt_unit             = 'm'
     npt                  = 12
     ndtd                 = 1
-    runtype              = 'initial'
+    runtype              = 'continue'
     ice_ic               = 'none'
     restart_ext          = .false.
-    use_restart_time     = .false.
+    use_restart_time     = .true.
     restart_format       = 'default'
     restart_rearranger   = 'default'
     restart_iotasks      = -99
