@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+if (( $# )); then echo "This case runs one 30-day job; no yearly options." >&2; exit 2; fi
+qsub cice.run.continuous

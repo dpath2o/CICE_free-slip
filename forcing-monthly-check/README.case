@@ -1,0 +1,2 @@
+Tue Nov  3 23:10:42 AEDT 2026 ./cice.setup --case /home/581/da1339/AFIM/src/CICE_free-slip/forcing-monthly-check --mach gadi1 --env intel --grid gbox12 --pes 1232x1x20x20x10 --acct jk72 --queue normalbw --ignore-user-set
+Tue Nov  3 23:10:42 AEDT 2026 ./cice.setup adding namelist modes set_nml.gbox12

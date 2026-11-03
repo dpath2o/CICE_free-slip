@@ -288,7 +288,7 @@ contains
     elseif (trim(atm_data_type) == 'hycom') then
        call hycom_atm_files
     elseif (trim(atm_data_type) == 'ERA5') then
-       call ERA5_files(fyear)
+       call ERA5_monthly_files(fyear, mmonth)
     elseif (trim(atm_data_type) == 'default') then
        ! don't need to do anything more
     else
@@ -1664,10 +1664,6 @@ contains
   end subroutine init_forcing_file
 
   !=======================================================================
-  subroutine ERA5_files(fyr)
-    integer (kind=int_kind), intent(in) :: fyr  !
-    call init_forcing_file(atm_data_dir, 'era5_for_cice6', fyr, F_ERA5, 'ERA5')
-  end subroutine ERA5_files
 
   !=======================================================================
   subroutine AFIM_files(fyr)
@@ -1860,129 +1856,243 @@ contains
   end subroutine JRA55_data
 
   !=======================================================================
+  subroutine ERA5_monthly_files(yr, mon)
+    ! Build monthly ERA5 forcing filename.
+    !
+    ! Expected file pattern:
+    !   ${atm_data_dir}/era5_for_cice6_YYYY_MM.nc
+    !
+    ! Example:
+    !   /g/data/gv90/da1339/afim_input/ERA5/0p25/bilinear/monthly_cice6/era5_for_cice6_1994_10.nc
+    integer(kind=int_kind), intent(in) :: yr
+    integer(kind=int_kind), intent(in) :: mon
+    character(len=4) :: cyear
+    character(len=2) :: cmonth
+    character(len=*), parameter :: subname = '(ERA5_monthly_files)'
+    if (mon < 1 .or. mon > 12) then
+       write(nu_diag,*) subname, ' ERROR invalid month = ', mon
+       call abort_ice(error_message=subname//' invalid month', file=__FILE__, line=__LINE__)
+    endif
+    write(cyear, '(i4.4)') yr
+    write(cmonth,'(i2.2)') mon
+    F_ERA5 = trim(atm_data_dir)//'/era5_for_cice6_'//cyear//'_'//cmonth//'.nc'
+    if (debug_forcing .or. local_debug) then
+       if (my_task == master_task) then
+          write(nu_diag,*) subname, ' ERA5 monthly file = ', trim(F_ERA5)
+       endif
+    endif
+  end subroutine ERA5_monthly_files
+
+  !=======================================================================
   subroutine ERA5_data
-    ! This code is built off the back of the JRA55_data subroutine (above).
-    ! It assumes hourly ERA5 data stored in yearly files as follows:
+    ! Reads monthly hourly ERA5 forcing files on the CICE T grid.
     !
-    ! states are instantaneous, 1st record is YYYY-01-01-00:00Z
-    ! fluxes are hourly averages, 1st record is YYYY-12-31-23:00Z to [+1]YYYY-01-01-OOZ
-    ! interpolate states, do not interpolate fluxes
+    ! Monthly reader adapted from CICE_dyntens dev a0de0cf.
+    ! Preserve free-slip precipitation: ttlpcp -> fsnow, followed by the
+    ! existing temperature-based rain/snow partition in prepare_atm_forcing.
+    ! Optional diagnostics and forcing perturbations are not imported.
     !
-    ! File is NETCDF with winds in NORTH and EAST direction, and file variable names are:
-    ! glbrad   (shortwave W/m^2), 1 hr average
-    ! dlwsfc   (longwave W/m^2), 1 hr average
-    ! wndewd   (eastward wind m/s), instantaneous
-    ! wndnwd   (northward wind m/s), instantaneous
-    ! airtmp   (air temperature K), instantaneous
-    ! spchmd   (specific humidity kg/kg), instantaneous
-    ! ttlpcp   (precipitation kg/m s-1), 1 hr average
-    !
-    ! Author: DP@H2O, University of Tasmania
-    !
+    ! Expected file pattern:
+    !   ${atm_data_dir}/era5_for_cice6_YYYY_MM.nc
+
     use ice_blocks, only            : block, get_block
     use ice_global_reductions, only : global_minval, global_maxval
     use ice_domain, only            : nblocks, distrb_info
     use ice_flux, only              : fsnow, Tair, uatm, vatm, Qa, fsw, flw
     use ice_grid, only              : hm, tmask, umask
     use ice_state, only             : aice
-    use ice_calendar, only          : days_per_year, use_leap_years, mday, mmonth, myear, isleap
-    integer (kind=int_kind)       :: ncid             , & ! netcdf file id
-                                     i, j, n1         , &
-                                     lfyear           , & ! local year value
-                                     recnum           , & ! record number
-                                     maxrec           , & ! maximum record number
-                                     iblk                 ! block index
-    integer (kind=int_kind), save :: frec_info(2,2) = -99 ! remember prior values to reduce reading first dim is yr, recnum second dim is data1 data2
-    real (kind=dbl_kind)          :: sec1hr          , &  ! number of seconds in 3 hours
-                                     secday          , &  ! number of seconds in day
-                                     eps, tt         , &  ! for interpolation coefficients
-                                     Tffresh, vmin, vmax
-    character(len=64)             :: fieldname !netcdf field name
-    character (char_len_long)     :: F_ERA5_old
-    character(len=*), parameter   :: subname = '(ERA5_data)'
+    use ice_calendar, only          : mday, mmonth, myear
+
+    integer(kind=int_kind) :: ncid
+    integer(kind=int_kind) :: i, j, n1
+    integer(kind=int_kind) :: lfyear
+    integer(kind=int_kind) :: lmonth
+    integer(kind=int_kind) :: recnum
+    integer(kind=int_kind) :: rec_to_read
+    integer(kind=int_kind) :: maxrec
+    integer(kind=int_kind) :: iblk
+    integer(kind=int_kind) :: modadj
+
+    ! remember prior values to reduce reading:
+    ! dim 1: year, month, recnum
+    ! dim 2: data slot 1/2
+    integer(kind=int_kind), save :: frec_info(3,2) = -99
+
+    real(kind=dbl_kind) :: sec1hr
+    real(kind=dbl_kind) :: secday
+    real(kind=dbl_kind) :: eps, tt
+    real(kind=dbl_kind) :: Tffresh
+    real(kind=dbl_kind) :: vmin, vmax
+
+    character(len=64)           :: fieldname
+    character(len=*), parameter :: subname = '(ERA5_data)'
+
     call icepack_query_parameters(Tffresh_out=Tffresh)
     call icepack_query_parameters(secday_out=secday)
     call icepack_warnings_flush(nu_diag)
     if (icepack_warnings_aborted()) call abort_ice(error_message=subname, file=__FILE__, line=__LINE__)
-    sec1hr = secday/24        ! seconds in 1 hours
-    maxrec = 365*24
-    if (mod(myear,  4) == 0) maxrec = 366*24
-    if (mod(myear,400) == 0) maxrec = 366*24
+
+    sec1hr = secday / 24.0_dbl_kind
+
+    !-------------------------------------------------------------------
+    ! 1. Work out forcing-cycle year and current month.
+    !-------------------------------------------------------------------
+    if (ycycle == 0) then
+       lfyear = myear
+    else
+       modadj = abs((min(0, myear - fyear_init) / ycycle + 1) * ycycle)
+       lfyear = fyear_init + mod(myear - fyear_init + modadj, ycycle)
+    endif
+
+    lmonth = mmonth
+
+    ! Monthly ERA5 files contain one hourly record per hour in this month.
+    maxrec = 24 * daymo(lmonth)
+
+    recnum = 24 * (mday - 1) + int(real(msec,kind=dbl_kind) / sec1hr) + 1
+
+    if (recnum < 1) recnum = 1
+    if (recnum > maxrec) recnum = maxrec
+
+    call ERA5_monthly_files(lfyear, lmonth)
+
     if (debug_forcing .or. local_debug) then
-      if (my_task.eq.master_task) write(nu_diag, *) subname, ' myear, mmonth              : ', myear, mmonth
-      if (my_task.eq.master_task) write(nu_diag, *) subname, ' maximum records            : ', maxrec
-    endif
-    recnum = 24*int(yday) - 23 + int(real(msec,kind=dbl_kind)/sec1hr)
-    if (debug_forcing .or. local_debug) then
-      if (my_task.eq.master_task) write(nu_diag, *) subname, ' current forcing time index : ', recnum
-    endif
-    if ((myear.gt.fyear_init.and.recnum.eq.1).or.(recnum>maxrec)) then
-       call ERA5_files(myear)
-       recnum = 1
-    endif
-    call ice_open_nc(F_ERA5,ncid)
-    do n1 = 0,1
-       if ((recnum>1).and.(recnum<maxrec)) then
-          fieldname = 'airtmp'
-          call ice_read_nc(ncid, recnum+n1, fieldname, Tair_data (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'wndewd'
-          call ice_read_nc(ncid, recnum+n1, fieldname, uatm_data (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'wndnwd'
-          call ice_read_nc(ncid, recnum+n1, fieldname, vatm_data (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'spchmd'
-          call ice_read_nc(ncid, recnum+n1, fieldname, Qa_data   (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'glbrad'
-          call ice_read_nc(ncid, recnum+n1, fieldname, fsw_data  (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'dlwsfc'
-          call ice_read_nc(ncid, recnum+n1, fieldname, flw_data  (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'ttlpcp'
-          call ice_read_nc(ncid, recnum+n1, fieldname, fsnow_data(:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-       else
-          fieldname = 'airtmp'
-          call ice_read_nc(ncid, recnum, fieldname, Tair_data (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'wndewd'
-          call ice_read_nc(ncid, recnum, fieldname, uatm_data (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'wndnwd'
-          call ice_read_nc(ncid, recnum, fieldname, vatm_data (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'spchmd'
-          call ice_read_nc(ncid, recnum, fieldname, Qa_data   (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'glbrad'
-          call ice_read_nc(ncid, recnum, fieldname, fsw_data  (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'dlwsfc'
-          call ice_read_nc(ncid, recnum, fieldname, flw_data  (:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
-          fieldname = 'ttlpcp'
-          call ice_read_nc(ncid, recnum, fieldname, fsnow_data(:,:,n1+1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+       if (my_task == master_task) then
+          write(nu_diag,*) subname, ' myear, lfyear, mmonth : ', myear, lfyear, lmonth
+          write(nu_diag,*) subname, ' monthly maxrec        : ', maxrec
+          write(nu_diag,*) subname, ' current recnum        : ', recnum
+          write(nu_diag,*) subname, ' ERA5 file             : ', trim(F_ERA5)
        endif
-    enddo
-    call ice_close_nc(ncid)
-    eps    = 1.0e-6
-    tt     = real(mod(msec,nint(sec1hr)),kind=dbl_kind)
-    c2intp = tt / sec1hr
-    if (c2intp < c0 .and. c2intp > c0-eps) c2intp = c0
-    if (c2intp > c1 .and. c2intp < c1+eps) c2intp = c1
-    c1intp = 1.0_dbl_kind - c2intp
-    if (c2intp < c0 .or. c2intp > c1) then
-       write(nu_diag,*) subname,' ERROR: c2intp = ',c2intp
-       call abort_ice (error_message=subname//' ERROR: c2intp out of range', file=__FILE__, line=__LINE__)
     endif
+
+    !-------------------------------------------------------------------
+    ! 2. Open monthly file and read current/next records.
+    !
+    ! State variables are interpolated using slots 1 and 2.
+    ! Flux variables remain slot-1 values below, preserving the current
+    ! convention that hourly fluxes are applied as record values.
+    !
+    ! At the final record of the month, persist the final record for slot 2.
+    ! A later stage can add next-month look-ahead if needed.
+    !-------------------------------------------------------------------
+    call ice_open_nc(F_ERA5, ncid)
+
+    do n1 = 1, 2
+
+       if (n1 == 1) then
+          rec_to_read = recnum
+       else
+          rec_to_read = min(recnum + 1, maxrec)
+       endif
+
+       if (lfyear /= frec_info(1,n1) .or. &
+           lmonth /= frec_info(2,n1) .or. &
+           rec_to_read /= frec_info(3,n1)) then
+
+          ! If slot 1 now equals last step's slot 2, copy instead of reread.
+          if (n1 == 1 .and. &
+               lfyear == frec_info(1,2) .and. &
+               lmonth == frec_info(2,2) .and. &
+               rec_to_read == frec_info(3,2)) then
+
+             Tair_data    (:,:,1,:) = Tair_data    (:,:,2,:)
+             uatm_data    (:,:,1,:) = uatm_data    (:,:,2,:)
+             vatm_data    (:,:,1,:) = vatm_data    (:,:,2,:)
+             Qa_data      (:,:,1,:) = Qa_data      (:,:,2,:)
+             fsw_data     (:,:,1,:) = fsw_data     (:,:,2,:)
+             flw_data     (:,:,1,:) = flw_data     (:,:,2,:)
+             fsnow_data   (:,:,1,:) = fsnow_data   (:,:,2,:)
+
+          else
+
+             ! Required variables: abort if missing.
+             fieldname = 'airtmp'
+             call ice_read_nc(ncid, rec_to_read, fieldname, Tair_data(:,:,n1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+             ! call ERA5_debug_minmax('raw airtmp', Tair_data(:,:,n1,:))
+
+             fieldname = 'wndewd'
+             call ice_read_nc(ncid, rec_to_read, fieldname, uatm_data(:,:,n1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+             ! call ERA5_debug_minmax('raw eastward wind', uatm_data(:,:,n1,:))
+
+             fieldname = 'wndnwd'
+             call ice_read_nc(ncid, rec_to_read, fieldname, vatm_data(:,:,n1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+             ! call ERA5_debug_minmax('raw northward wind', vatm_data(:,:,n1,:))
+
+             fieldname = 'spchmd'
+             call ice_read_nc(ncid, rec_to_read, fieldname, Qa_data(:,:,n1,:)  , local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+             ! call ERA5_debug_minmax('raw specific humidity', Qa_data(:,:,n1,:))
+
+             fieldname = 'glbrad'
+             call ice_read_nc(ncid, rec_to_read, fieldname, fsw_data(:,:,n1,:) , local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+             ! call ERA5_debug_minmax('raw downward shortwave radiation', fsw_data(:,:,n1,:))
+
+             fieldname = 'dlwsfc'
+             call ice_read_nc(ncid, rec_to_read, fieldname, flw_data(:,:,n1,:) , local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+             ! call ERA5_debug_minmax('raw downward longwave radiation', flw_data(:,:,n1,:))
+
+             fieldname = 'ttlpcp'
+             call ice_read_nc(ncid, rec_to_read, fieldname, fsnow_data(:,:,n1,:), local_debug, field_loc=field_loc_center, field_type=field_type_scalar)
+             ! call ERA5_debug_minmax('raw total preceipitation', fsnow_data(:,:,n1,:))
+
+
+          endif
+
+          frec_info(1,n1) = lfyear
+          frec_info(2,n1) = lmonth
+          frec_info(3,n1) = rec_to_read
+
+       endif
+
+    enddo
+
+    call ice_close_nc(ncid)
+
+    !-------------------------------------------------------------------
+    ! 3. Interpolation coefficients within the current hour.
+    !-------------------------------------------------------------------
+    eps    = 1.0e-6_dbl_kind
+    tt     = real(mod(msec, nint(sec1hr)), kind=dbl_kind)
+    c2intp = tt / sec1hr
+
+    if (c2intp < c0 .and. c2intp > c0 - eps) c2intp = c0
+    if (c2intp > c1 .and. c2intp < c1 + eps) c2intp = c1
+
+    c1intp = c1 - c2intp
+
+    if (c2intp < c0 .or. c2intp > c1) then
+       write(nu_diag,*) subname, ' ERROR: c2intp = ', c2intp
+       call abort_ice(error_message=subname//' ERROR: c2intp out of range', file=__FILE__, line=__LINE__)
+    endif
+
     if (debug_forcing .or. local_debug) then
-      if (my_task.eq.master_task) write(nu_diag, *) subname, ' c1,c2: ',c1intp,c2intp
-    endif 
+       if (my_task == master_task) write(nu_diag,*) subname, ' c1,c2 = ', c1intp, c2intp
+    endif
+
+    !-------------------------------------------------------------------
+    ! 4. Preserve the established free-slip forcing semantics.
+    ! Interpolate states; apply hourly fluxes without interpolation.
+    ! Total precipitation is partitioned later by prepare_atm_forcing.
+    !-------------------------------------------------------------------
     call interpolate_data(Tair_data, Tair)
     call interpolate_data(uatm_data, uatm)
     call interpolate_data(vatm_data, vatm)
-    call interpolate_data(Qa_data  , Qa)
+    call interpolate_data(Qa_data,   Qa)
     fsw  (:,:,:) = fsw_data  (:,:,1,:)
     flw  (:,:,:) = flw_data  (:,:,1,:)
     fsnow(:,:,:) = fsnow_data(:,:,1,:)
+
+    !-------------------------------------------------------------------
+    ! 5. Existing masking and summer Tair limiter.
+    !-------------------------------------------------------------------
     !$OMP PARALLEL DO PRIVATE(iblk,i,j)
     do iblk = 1, nblocks
-       ! limit summer Tair values where ice is present
+
        do j = 1, ny_block
           do i = 1, nx_block
-             if (aice(i,j,iblk) > p1) Tair(i,j,iblk) = min(Tair(i,j,iblk), Tffresh+p1)
+             if (aice(i,j,iblk) > p1) Tair(i,j,iblk) = min(Tair(i,j,iblk), Tffresh + p1)
           enddo
        enddo
+
        do j = 1, ny_block
           do i = 1, nx_block
              Qa   (i,j,iblk) = Qa   (i,j,iblk) * hm(i,j,iblk)
@@ -1994,32 +2104,48 @@ contains
              fsnow(i,j,iblk) = fsnow(i,j,iblk) * hm(i,j,iblk)
           enddo
        enddo
-    enddo  ! iblk !$OMP END PARALLEL DO
-    !if (era5_mod_var)
+
+    enddo
+    !$OMP END PARALLEL DO
+
+    !-------------------------------------------------------------------
+    ! 6. Diagnostics.
+    !-------------------------------------------------------------------
     if (debug_forcing .or. local_debug) then
-       if (my_task.eq.master_task) write (nu_diag,*) subname,' ERA5 global min max for forcing time record index: ', recnum
+
+       if (my_task.eq.master_task) write(nu_diag,*) subname, ' ERA5 monthly forcing record = ', recnum
+
        vmin = global_minval(fsw,distrb_info,tmask)
        vmax = global_maxval(fsw,distrb_info,tmask)
-       if (my_task.eq.master_task) write (nu_diag,*) subname,'  fsw',vmin,vmax
+       if (my_task.eq.master_task) write(nu_diag,*) subname, '  fsw', vmin, vmax
+
        vmin = global_minval(flw,distrb_info,tmask)
        vmax = global_maxval(flw,distrb_info,tmask)
-       if (my_task.eq.master_task) write (nu_diag,*) subname,'  flw',vmin,vmax
-       vmin =global_minval(fsnow,distrb_info,tmask)
-       vmax =global_maxval(fsnow,distrb_info,tmask)
-       if (my_task.eq.master_task) write (nu_diag,*) subname,'  fsnow',vmin,vmax
+       if (my_task.eq.master_task) write(nu_diag,*) subname, '  flw', vmin, vmax
+
+       vmin = global_minval(fsnow,distrb_info,tmask)
+       vmax = global_maxval(fsnow,distrb_info,tmask)
+       if (my_task.eq.master_task) write(nu_diag,*) subname, '  fsnow', vmin, vmax
+
+
        vmin = global_minval(Tair,distrb_info,tmask)
        vmax = global_maxval(Tair,distrb_info,tmask)
-       if (my_task.eq.master_task) write (nu_diag,*) subname,'  Tair',vmin,vmax
+       if (my_task.eq.master_task) write(nu_diag,*) subname, '  Tair', vmin, vmax
+
        vmin = global_minval(uatm,distrb_info,umask)
        vmax = global_maxval(uatm,distrb_info,umask)
-       if (my_task.eq.master_task) write (nu_diag,*) subname,'  uatm',vmin,vmax
+       if (my_task.eq.master_task) write(nu_diag,*) subname, '  uatm', vmin, vmax
+
        vmin = global_minval(vatm,distrb_info,umask)
        vmax = global_maxval(vatm,distrb_info,umask)
-       if (my_task.eq.master_task) write (nu_diag,*) subname,'  vatm',vmin,vmax
+       if (my_task.eq.master_task) write(nu_diag,*) subname, '  vatm', vmin, vmax
+
        vmin = global_minval(Qa,distrb_info,tmask)
        vmax = global_maxval(Qa,distrb_info,tmask)
-       if (my_task.eq.master_task) write (nu_diag,*) subname,'  Qa',vmin,vmax
-    endif                   ! debug_forcing
+       if (my_task.eq.master_task) write(nu_diag,*) subname, '  Qa', vmin, vmax
+
+    endif
+
   end subroutine ERA5_data
 
    !=======================================================================

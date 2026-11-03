@@ -320,7 +320,7 @@
     fyear_init      = 1995
     ycycle          = 31
     atm_data_format = 'nc'
-    atm_data_dir    = '/g/data/gv90/da1339/afim_input/ERA5/0p25/'
+    atm_data_dir    = '/g/data/gv90/da1339/afim_input/ERA5/0p25/bilinear/monthly_cice6_fast/'
     bgc_data_dir    = 'unknown_bgc_data_dir'
     ocn_data_format = 'nc'
     ocn_data_dir    = '/g/data/gv90/da1339/afim_input/ORAS/daily/sfc/fin/'

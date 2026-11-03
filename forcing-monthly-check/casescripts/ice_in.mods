@@ -1,0 +1,22 @@
+# cice.setup settings
+nprocs            = 1232
+nx_global         = 12
+ny_global         = 12
+block_size_x      = 20
+block_size_y      = 20
+max_blocks        = 10
+distribution_type = 'roundrobin'
+processor_shape   = 'slenderX2'
+version_name      = 'CICE_6.6.2'
+
+# set_nml.gbox12
+dxrect        = 30.e5
+dyrect        = 30.e5
+ice_ic = 'internal'
+grid_type = 'rectangular'
+kmt_type      = 'default'
+atm_data_type = 'box2001'
+ocn_data_type = 'box2001'
+ice_data_type = 'box2001'
+ice_data_conc = 'box2001'
+ice_data_dist = 'box2001'

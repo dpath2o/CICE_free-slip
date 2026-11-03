@@ -1,0 +1,27 @@
+{
+  "setup_command": [
+    "./cice.setup",
+    "--case",
+    "/home/581/da1339/AFIM/src/CICE_free-slip/forcing-monthly-check",
+    "--mach",
+    "gadi1",
+    "--env",
+    "intel",
+    "--grid",
+    "gbox12",
+    "--pes",
+    "1232x1x20x20x10",
+    "--acct",
+    "jk72",
+    "--queue",
+    "normalbw",
+    "--ignore-user-set"
+  ],
+  "restart": "/home/581/da1339/AFIM_archive/lateral-drag/Cs-high/restart/iced.2003-09-01-00000.nc",
+  "start": "2003-09-01",
+  "days": 30,
+  "inputs_checked": false,
+  "rundir": "/g/data/gv90/da1339/cice-dirs/runs/forcing-monthly-check",
+  "reference": "/home/581/da1339/AFIM_archive/lateral-drag/Cs-high/zarr/iceh_daily.zarr",
+  "generation_validation": "cice.setup completed locally using a module-command stub; Gadi input/toolchain checks pending"
+}
