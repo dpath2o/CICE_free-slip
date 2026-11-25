@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import xarray as xr
@@ -43,6 +44,42 @@ def regional_tile(source, bounds, row_batch=128):
     return fields.isel({dims[0]: slice(row0, row1), dims[1]: slice(col0, col1)}).transpose(*dims).compute()
 
 
+def plot_difference_file(plotter, tile, request, output):
+    """Bypass PyGMT's array-backed virtual table for the FIP symbol layer."""
+    pygmt = plotter._require_pygmt()
+    print(f"PyGMT {pygmt.__version__}; shuga plotter: {sys.modules[plotter.__class__.__module__].__file__}", flush=True)
+    bounds = request["bounds"]
+    data = plotter.pygmt_da_prep(tile["diff"], lon=tile.lon, lat=tile.lat,
+                               mask_zero=False, region=bounds)
+    if data.empty:
+        raise ValueError("No finite FIP difference points within the plot region")
+    # Explicit column order and 17 significant digits preserve float64 values,
+    # including zero/negative differences. No resampling or persistence changes.
+    with TemporaryDirectory(prefix="ld_fip_points_") as directory:
+        points = Path(directory) / "difference.xyz"
+        cpt = Path(directory) / "difference.cpt"
+        data[["lon", "lat", "z"]].to_csv(points, sep="\t", header=False,
+                                        index=False, float_format="%.17g")
+        print(f"Wrote {len(data)} lon/lat/difference rows; file-backed plotting", flush=True)
+        fig = pygmt.Figure()
+        projection = plotter.projection_from_region(bounds, fig_size=plotter.plt_cfg.fip_fig_size)
+        print("GMT: makecpt", flush=True)
+        pygmt.makecpt(cmap=str(Path(plotter.pth_cfg.fip_diff_con_cmap).expanduser()),
+                      series=[-1.0, 1.0, 0.05], continuous=True, output=str(cpt))
+        print("GMT: basemap/coast background", flush=True)
+        plotter.pygmt_base_layer(fig, bounds, projection, title=request["title"])
+        print("GMT: plot file (no x/y/fill arrays)", flush=True)
+        fig.plot(data=str(points), style=plotter.plt_cfg.grid_style,
+                 cmap=str(cpt), region=bounds, projection=projection)
+        print("GMT: coastline overlay", flush=True)
+        fig.coast(region=bounds, projection=projection, shorelines=plotter.plt_cfg.shorelines)
+        print("GMT: colorbar", flush=True)
+        fig.colorbar(cmap=str(cpt), position="JMB+w8c/0.4c+o0.8c/0c",
+                      frame=["xaf+lFIP difference (model - AF2020)"])
+        print("GMT: savefig", flush=True)
+        fig.savefig(output)
+
+
 def render(request):
     # Configure import paths before loading this standalone shuga checkout.
     sys.path.insert(0, str(Path(request["shuga_dir"]).expanduser().resolve().parent))
@@ -73,9 +110,7 @@ def render(request):
     temporary = output.with_name(output.stem + ".partial.png")
     try:
         plotter = CICEPlotter(run_cfg=run, cls_cfg=cls, met_cfg=met, pth_cfg=paths)
-        plotter.plot_fip(method=method, source="dataset", field="diff", dataset=tile,
-                         regions={request["region"]: request["bounds"]}, output_path=temporary,
-                         title=request["title"], show=False)
+        plot_difference_file(plotter, tile, request, temporary)
         if not temporary.is_file() or temporary.stat().st_size == 0:
             raise RuntimeError("GMT returned without a nonempty PNG")
         temporary.replace(output)
